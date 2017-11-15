@@ -67,6 +67,32 @@ void DihedralElem::computeForce(DihedralElem *tuples, int ntuple, BigReal *reduc
   const Real (&scale)(tup.scale);
   const DihedralValue * const(&value)(tup.value);
 
+#if defined(DEBUG_PROTOCELL)
+  if ((PRMIN <= atomID[0] && atomID[0] <= PRMAX) &&
+      (PRMIN <= atomID[1] && atomID[1] <= PRMAX) &&
+      (PRMIN <= atomID[2] && atomID[2] <= PRMAX) &&
+      (PRMIN <= atomID[3] && atomID[3] <= PRMAX)) {
+    int i = atomID[0];
+    int j = atomID[1];
+    int k = atomID[2];
+    int l = atomID[3];
+    if (atomID[3] < atomID[0]) {
+      i = atomID[3];
+      j = atomID[2];
+      k = atomID[1];
+      l = atomID[0];
+    }
+    int mult = value->multiplicity;
+    CkPrintf("%11d %11d %11d %11d mult=%d", i, j, k, l, mult);
+    for (int m=0;  m < mult;  m++) {
+      double kdelta = value->values[m].k;
+      double delta = value->values[m].delta;
+      int n = value->values[m].n;
+      CkPrintf("  k=%g delta=%g n=%d\n", kdelta, delta, n);
+    }
+  }
+#endif
+
   DebugM(3, "::computeForce() localIndex = " << localIndex[0] << " "
                << localIndex[1] << " " << localIndex[2] << std::endl);
 

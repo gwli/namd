@@ -11,6 +11,17 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+// Check all bonds that have atom IDs in the range given below.
+#if defined(DEBUG_PROTOCELL)
+// Use Noah's default index range unless others are explicitly provided.
+#ifndef PRMIN
+#define PRMIN  23749759
+#endif
+#ifndef PRMAX
+#define PRMAX  23749892
+#endif
+#endif
+
 #if !defined(WIN32) || defined(__CYGWIN__)
 #include <unistd.h>
 #endif

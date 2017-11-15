@@ -67,6 +67,21 @@ void BondElem::computeForce(BondElem *tuples, int ntuple, BigReal *reduction,
   const Real (&scale)(tup.scale);
   const BondValue * const(&value)(tup.value);
 
+#if defined(DEBUG_PROTOCELL)
+  if ((PRMIN <= atomID[0] && atomID[0] <= PRMAX) &&
+      (PRMIN <= atomID[1] && atomID[1] <= PRMAX)) {
+    int i = atomID[0];
+    int j = atomID[1];
+    if (atomID[1] < atomID[0]) {
+      i = atomID[1];
+      j = atomID[0];
+    }
+    double k = value->k;
+    double r0 = value->x0;
+    CkPrintf("%11d %11d k=%g r0=%g\n", i, j, k, r0);
+  }
+#endif
+
   DebugM(1, "::computeForce() localIndex = " << localIndex[0] << " "
                << localIndex[1] << std::endl);
 

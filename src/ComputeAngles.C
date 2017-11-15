@@ -73,6 +73,27 @@ void AngleElem::computeForce(AngleElem *tuples, int ntuple, BigReal *reduction, 
   const Real (&scale)(tup.scale);
   const AngleValue * const(&value)(tup.value);
 
+#if defined(DEBUG_PROTOCELL)
+  if ((PRMIN <= atomID[0] && atomID[0] <= PRMAX) &&
+      (PRMIN <= atomID[1] && atomID[1] <= PRMAX) &&
+      (PRMIN <= atomID[2] && atomID[2] <= PRMAX)) {
+    int i = atomID[0];
+    int j = atomID[1];
+    int k = atomID[2];
+    if (atomID[2] < atomID[0]) {
+      i = atomID[2];
+      j = atomID[1];
+      k = atomID[0];
+    }
+    double ktheta = value->k;
+    double theta0 = value->theta0;
+    double kub = value->k_ub;
+    double rub = value->r_ub;
+    CkPrintf("%11d %11d %11d k=%g theta0=%g kub=%g rub=%g\n",
+        i, j, k, ktheta, theta0, kub, rub);
+  }
+#endif
+
   DebugM(3, "::computeForce() localIndex = " << localIndex[0] << " "
                << localIndex[1] << " " << localIndex[2] << std::endl);
 
