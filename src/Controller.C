@@ -1074,7 +1074,7 @@ void Controller::langevinPiston1(int step)
       }
       state->lattice.rescale(positionRescaleFactor);
 #ifdef DEBUG_PRESSURE
-      iout << iINFO << "rescaling by: " << factor << "\n";
+      iout << iINFO << "rescaling by: " << positionRescaleFactor << "\n";
 #endif
     }
     if ( ! ( (step-slowFreq/2) % slowFreq ) )

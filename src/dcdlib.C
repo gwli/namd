@@ -625,20 +625,20 @@ int read_dcdstep(int fd, int N, float *X, float *Y, float *Z, int num_fixed,
 #endif
 
 #if OUTPUT_SINGLE_FILE
-#define NFILE_POS (off_t) 8
-#define NPRIV_POS (off_t) 12
-#define NSAVC_POS (off_t) 16
-#define NSTEP_POS (off_t) 20
+#define NFILE_POS  ((OFF_T) 8)
+#define NPRIV_POS  ((OFF_T) 12)
+#define NSAVC_POS  ((OFF_T) 16)
+#define NSTEP_POS  ((OFF_T) 20)
 #else
 //Need to consider extra fields: 
 //1. magic number (int32)
 //2. file version (float)
 //3. number of files that contain portion of data (int32)
 //So the total offset is 12 bytes.
-#define NFILE_POS (off_t) 20
-#define NPRIV_POS (off_t) 24
-#define NSAVC_POS (off_t) 28
-#define NSTEP_POS (off_t) 32
+#define NFILE_POS  ((OFF_T) 20)
+#define NPRIV_POS  ((OFF_T) 24)
+#define NSAVC_POS  ((OFF_T) 28)
+#define NSTEP_POS  ((OFF_T) 32)
 #endif
 
 /*********************************************************************/
@@ -748,15 +748,19 @@ int write_dcdstep(int fd, int N, float *X, float *Y, float *Z, double *cell)
   }
 
   /* Coordinates */
+  // Note: the value of out_integer wraps for N >= 2^30.
 	out_integer = N*4;
+  // Use a separate byte count stored without overflow.
+  size_t nbytes = ((size_t) N) * 4;
+
 	NAMD_write(fd, (char *) &out_integer, sizeof(int32));
-	NAMD_write(fd, (char *) X, out_integer);
+	NAMD_write(fd, (char *) X, nbytes);
 	NAMD_write(fd, (char *) &out_integer, sizeof(int32));
 	NAMD_write(fd, (char *) &out_integer, sizeof(int32));
-	NAMD_write(fd, (char *) Y, out_integer);
+	NAMD_write(fd, (char *) Y, nbytes);
 	NAMD_write(fd, (char *) &out_integer, sizeof(int32));
 	NAMD_write(fd, (char *) &out_integer, sizeof(int32));
-	NAMD_write(fd, (char *) Z, out_integer);
+	NAMD_write(fd, (char *) Z, nbytes);
 	NAMD_write(fd, (char *) &out_integer, sizeof(int32));
 
 	/* don't update header until after write succeeds */
@@ -808,18 +812,23 @@ int write_dcdstep_par_XYZUnits(int fd, int N)
   int32 out_integer;
 
   // number of elements
+  // Note: the value of out_integer wraps for N >= 2^30.
   out_integer = N*sizeof(float);
+
+  // For byte seeking, use a properly sized variable.
+  OFF_T nbytes = ((OFF_T) N) * sizeof(float);
+
   NAMD_write(fd, (char *) &out_integer, sizeof(int32));
   // seek to the end of each x y z block and write out the count
-  LSEEK(fd, out_integer, SEEK_CUR);
+  LSEEK(fd, nbytes, SEEK_CUR);
   NAMD_write(fd, (char *) &out_integer, sizeof(int32));
 
   NAMD_write(fd, (char *) &out_integer, sizeof(int32));
-  LSEEK(fd, out_integer, SEEK_CUR);
+  LSEEK(fd, nbytes, SEEK_CUR);
   NAMD_write(fd, (char *) &out_integer, sizeof(int32));
 
   NAMD_write(fd, (char *) &out_integer, sizeof(int32));
-  LSEEK(fd, out_integer, SEEK_CUR);
+  LSEEK(fd, nbytes, SEEK_CUR);
   NAMD_write(fd, (char *) &out_integer, sizeof(int32));
 
   return(0);
@@ -854,16 +863,15 @@ int update_dcdstep_par_header(int fd)
 /* timestep X/Y/Z output                                             */
 int write_dcdstep_par_slave(int fd, int parL, int parU, int N, float *X, float *Y, float *Z){
 
-	int parN = parU-parL+1;
-	int32 out_integer;
   /* Coordinates for the N elements handled by this writer */
-	out_integer = parN*4;
+	int parN = parU-parL+1;
+  size_t nbytes = ((size_t)parN) * 4;
 
 	/* x's 1st number of Xs */
 	/* skip field for the bytes in X, and the first parL atoms in X*/
 	OFF_T xoffset = sizeof(int)+sizeof(float)*((OFF_T)parL);
 	LSEEK(fd, xoffset, SEEK_CUR);
-	NAMD_write(fd, (char *) X, out_integer);
+	NAMD_write(fd, (char *) X, nbytes);
 
 	/* skip field for the bytes in X and Y; */
 	/* skip the remaining atoms in X at number of (N-1)-(parU+1)+1
@@ -871,11 +879,11 @@ int write_dcdstep_par_slave(int fd, int parL, int parU, int N, float *X, float *
 	/* skip the first parL atoms in Y; */
 	OFF_T yoffset = 2*sizeof(int)+sizeof(float)*((OFF_T)(N-parU+parL-1));
 	LSEEK(fd, yoffset, SEEK_CUR);
-	NAMD_write(fd, (char *) Y, out_integer);
+	NAMD_write(fd, (char *) Y, nbytes);
 
 	OFF_T zoffset = yoffset;
 	LSEEK(fd, zoffset, SEEK_CUR);
-	NAMD_write(fd, (char *) Z, out_integer);
+	NAMD_write(fd, (char *) Z, nbytes);
 	return(0);
 }
 

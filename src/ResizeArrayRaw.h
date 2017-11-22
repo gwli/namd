@@ -37,6 +37,7 @@ template <class Elem> class ResizeArrayRaw {
     Elem *array;
     unsigned char *varray;
 
+    // Use of int (int32) is safe for counting elements.
     int arraySize;
     int allocSize;
 
@@ -45,15 +46,38 @@ template <class Elem> class ResizeArrayRaw {
     void resizeRaw(int size) {
       if (size <= allocSize) return;
   
-      if (size < (int)(allocSize*ResizeArrayGrowthFactor)) 
+      // Note that ResizeArrayGrowthFactor is type double so the
+      // multiplication below is also done in double.
+      // Assuming int32, the conversion from double overflows at
+      //   allocSize = 1431655765
+      // Conditional remains safe if overflow causes RHS < 0.
+      if (size < (int)(allocSize*ResizeArrayGrowthFactor)) {
         size = (int)(allocSize*ResizeArrayGrowthFactor);
-      if ( (size-allocSize) < ResizeArrayMinSize) 
+      }
+      // The next conditional will test true either for very small or
+      // unallocated arrays or if the above conditional causes overflow.
+      if ( (size-allocSize) < ResizeArrayMinSize) {
+        // Overflow occurs here only when allocSize is within
+        // ResizeArrayMinSize of 2^31.
         size = allocSize+ResizeArrayMinSize;
+      }
 
-      // align everything to 64-byte boundaries (if possible)
+      // Align everything to 64-byte boundaries (if possible).
+      // Use of sizeof below promotes expression to type size_t.
       unsigned char *tmpv = new unsigned char[size*sizeof(Elem)+63];
       //Elem *tmpa = (Elem *)((((long)tmpv)+63L)&(-64L));
       // Someday we might need this alternate form.
+      //
+      // The following pointer manipulation is dangerous. We should use
+      // reinterpret_cast<uintptr_t> or equivalent to convert tmpv+63
+      // to an unsigned integer type before doing bitwise and operation.
+      //
+      // The 63 value (64-byte alignment) aligns for AVX-512 registers.
+      // Would be better to use a macro or maybe even a template parameter
+      // instead of hard-coding the alignment.  With a template parameter,
+      // we could override the alignment where optimization warrants or
+      // target builds towards a particular alignment, e.g., AVX needs
+      // only 32-byte alignment.
       Elem *tmpa = (Elem *)(tmpv+63 - (((long)(tmpv+63))&(63L)));
       if (arraySize) CmiMemcpy((void *)tmpa, (void *)array, sizeof(Elem)*arraySize);
   
@@ -142,9 +166,9 @@ template <class Elem> class ResizeArrayRaw {
       int i;
   
       // Fix up number to delete if deletes off end of array
-      if (index >= arraySize)
+      if (index >= arraySize) {
         number=0; // for inline sake, don't have multiple returns
-      else if (index+number-1 > arraySize) {
+      } else if (index+number-1 > arraySize) {
         number = index-arraySize+1;
       }
   
@@ -190,13 +214,15 @@ template <class Elem> class ResizeArrayRaw {
           new ((void *)tmp) Elem;
         }
         arraySize = index+1;
-      } else
+      } else {
         arraySize++;
+      }
     }
 
     inline int find(const Elem &e) const {
-      for (int i=0; i<arraySize; i++)
+      for (int i=0; i<arraySize; i++) {
         if (array[i] == e) return i;
+      }
       return -1;
     }
 };	// end template definition
