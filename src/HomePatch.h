@@ -27,11 +27,6 @@
 #include <string>
 #include <map>
 
-//
-// DJH: NAMDLite array buffers are memory aligned for vector instructions.
-//
-//#include "nl_Array.h"
-//
 
 class RegisterProxyMsg;
 class UnregisterProxyMsg;
@@ -58,32 +53,37 @@ class ComputeQMMgr;
 // The idea is reduce the messaging footprint as much as possible.
 // Recalculate constants after atom migration.
 //
-//struct PatchDataSOA {
-//
-//namdlite::Array<float> gaussrand; // fill with Gaussian random numbers
-//
-//namdlite::Array<float> mass;
-//namdlite::Array<float> recipMass; // derived from mass
-//namdlite::Array<float> langevinParam;
-//namdlite::Array<float> langScalVelBBK2;  // derived from langevinParam
-//namdlite::Array<float> langScalRandBBK2; // from langevinParam and recipMass
-//
-//namdlite::Array<double> vel_x;  // Jim recommends double precision velocity
-//namdlite::Array<double> vel_y;
-//namdlite::Array<double> vel_z;
-//namdlite::Array<double> pos_x;
-//namdlite::Array<double> pos_y;
-//namdlite::Array<double> pos_z;
-//namdlite::Array<double> f_normal_x;
-//namdlite::Array<double> f_normal_y;
-//namdlite::Array<double> f_normal_z;
-//namdlite::Array<double> f_nbond_x;
-//namdlite::Array<double> f_nbond_y;
-//namdlite::Array<double> f_nbond_z;
-//namdlite::Array<double> f_slow_x;
-//namdlite::Array<double> f_slow_y;
-//namdlite::Array<double> f_slow_z;
-//};
+struct PatchDataSOA {
+
+  ResizeArray<float> gaussrand; // fill with Gaussian random numbers
+
+  ResizeArray<float> mass;
+  ResizeArray<float> recipMass; // derived from mass
+  ResizeArray<float> langevinParam;
+  ResizeArray<float> langScalVelBBK2;  // derived from langevinParam
+  ResizeArray<float> langScalRandBBK2; // from langevinParam and recipMass
+
+  ResizeArray<double> vel_x;  // Jim recommends double precision velocity
+  ResizeArray<double> vel_y;
+  ResizeArray<double> vel_z;
+  ResizeArray<double> pos_x;
+  ResizeArray<double> pos_y;
+  ResizeArray<double> pos_z;
+  ResizeArray<double> f_normal_x;
+  ResizeArray<double> f_normal_y;
+  ResizeArray<double> f_normal_z;
+  ResizeArray<double> f_nbond_x;
+  ResizeArray<double> f_nbond_y;
+  ResizeArray<double> f_nbond_z;
+  ResizeArray<double> f_slow_x;
+  ResizeArray<double> f_slow_y;
+  ResizeArray<double> f_slow_z;
+
+  int numAtoms;
+  PatchDataSOA() : numAtoms(0) { }
+
+}; // PatchDataSOA
+
 
 class HomePatch : public Patch {
   friend class PatchMgr;
@@ -319,20 +319,21 @@ private:
   //
   // DJH: SOA data structure declared here.
   //
-  //PatchDataSOA patchDataSOA;
+  PatchDataSOA patchDataSOA;
   //
   // Copy fields from FullAtom into SOA form.
-  //void copy_atoms_to_SOA();
-  //
-  // Copy forces into SOA form.
-  //void copy_forces_to_SOA();
+  void copy_atoms_to_SOA();
   //
   // Calculate derived constants after atom migration.
-  //void calculate_derived_SOA();
+  // Called from copy_atoms_to_SOA().
+  void calculate_derived_SOA();
+  //
+  // Copy forces into SOA form.
+  void copy_forces_to_SOA();
   //
   // Copy the updated quantities, e.g., positions and velocities, from SOA
   // back to AOS form.
-  //void copy_updates_to_AOS();
+  void copy_updates_to_AOS();
   //
 
   // DMK - Atom Separation (water vs. non-water)

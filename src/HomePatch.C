@@ -1380,6 +1380,121 @@ void HomePatch::saveForce(const int ftag)
 }
 
 
+//
+// Copying atom[] -> patchDataSOA.
+// Resize patchDataSOA arrays if needed.
+//
+void HomePatch::copy_atoms_to_SOA() {
+  if (patchDataSOA.numAtoms != numAtoms) {
+    // resize the arrays to proper length
+    patchDataSOA.gaussrand.resize(numAtoms);
+    patchDataSOA.mass.resize(numAtoms);
+    patchDataSOA.recipMass.resize(numAtoms);
+    patchDataSOA.langevinParam.resize(numAtoms);
+    patchDataSOA.langScalVelBBK2.resize(numAtoms);
+    patchDataSOA.langScalRandBBK2.resize(numAtoms);
+    patchDataSOA.vel_x.resize(numAtoms);
+    patchDataSOA.vel_y.resize(numAtoms);
+    patchDataSOA.vel_z.resize(numAtoms);
+    patchDataSOA.pos_x.resize(numAtoms);
+    patchDataSOA.pos_y.resize(numAtoms);
+    patchDataSOA.pos_z.resize(numAtoms);
+    patchDataSOA.f_normal_x.resize(numAtoms);
+    patchDataSOA.f_normal_y.resize(numAtoms);
+    patchDataSOA.f_normal_z.resize(numAtoms);
+    patchDataSOA.f_nbond_x.resize(numAtoms);
+    patchDataSOA.f_nbond_y.resize(numAtoms);
+    patchDataSOA.f_nbond_z.resize(numAtoms);
+    patchDataSOA.f_slow_x.resize(numAtoms);
+    patchDataSOA.f_slow_y.resize(numAtoms);
+    patchDataSOA.f_slow_z.resize(numAtoms);
+    patchDataSOA.numAtoms = numAtoms;
+  }
+
+  // copy data from AOS into SOA
+  for (int i=0;  i < numAtoms;  i++) {
+    patchDataSOA.mass[i] = atom[i].mass;
+    patchDataSOA.langevinParam[i] = atom[i].langevinParam;
+    patchDataSOA.vel_x[i] = atom[i].velocity.x;
+    patchDataSOA.vel_y[i] = atom[i].velocity.y;
+    patchDataSOA.vel_z[i] = atom[i].velocity.z;
+    patchDataSOA.pos_x[i] = atom[i].position.x;
+    patchDataSOA.pos_y[i] = atom[i].position.y;
+    patchDataSOA.pos_z[i] = atom[i].position.z;
+  }
+  
+  calculate_derived_SOA();
+}
+
+
+//
+// Calculate constants derived from the fundamental atom data.
+//
+void HomePatch::calculate_derived_SOA() {
+  SimParameters *simParams = Node::Object()->simParameters;
+  for (int i=0;  i < numAtoms;  i++) {
+    patchDataSOA.recipMass[i] = (atom[i].mass > 0 ? 1.f / atom[i].mass : 0);
+  }
+  if (simParams->langevinOn) {
+    BigReal dt_fs = simParams->dt;
+    BigReal dt = dt_fs * 0.001;  // convert timestep to ps
+    BigReal kbT = BOLTZMANN * simParams->langevinTemp;
+    int lesReduceTemp = (simParams->lesOn && simParams->lesReduceTemp);
+    BigReal tempFactor = (lesReduceTemp ? 1. / simParams->lesFactor : 1);
+    for (int i=0;  i < numAtoms;  i++) {
+      BigReal dt_gamma = dt * patchDataSOA.langevinParam[i];
+      patchDataSOA.langScalRandBBK2[i] = (float) sqrt( 2 * dt_gamma * kbT *
+          ( atom[i].partition ? tempFactor : 1 ) * patchDataSOA.recipMass[i] );
+      patchDataSOA.langScalVelBBK2[i] = (float) (1 / (1 + 0.5 * dt_gamma));
+    }
+  }
+}
+
+
+//
+// Copy forces from f[][] -> patchDataSOA.
+//
+void HomePatch::copy_forces_to_SOA() {
+  const ResizeArray<Force>& fnormal = f[Results::normal];
+  for (int i=0;  i < numAtoms;  i++) {
+    patchDataSOA.f_normal_x[i] = fnormal[i].x;
+    patchDataSOA.f_normal_y[i] = fnormal[i].y;
+    patchDataSOA.f_normal_z[i] = fnormal[i].z;
+  }
+  if (flags.doNonbonded) {
+    const ResizeArray<Force>& fnbond = f[Results::nbond];
+    for (int i=0;  i < numAtoms;  i++) {
+      patchDataSOA.f_nbond_x[i] = fnbond[i].x;
+      patchDataSOA.f_nbond_y[i] = fnbond[i].y;
+      patchDataSOA.f_nbond_z[i] = fnbond[i].z;
+    }
+  }
+  if (flags.doFullElectrostatics) {
+    const ResizeArray<Force>& fslow = f[Results::slow];
+    for (int i = 0;  i < numAtoms;  i++) {
+      patchDataSOA.f_slow_x[i] = fslow[i].x;
+      patchDataSOA.f_slow_y[i] = fslow[i].y;
+      patchDataSOA.f_slow_z[i] = fslow[i].z;
+    }
+  }
+}
+
+
+//
+// Copying patchDataSOA -> atom[].
+//
+void HomePatch::copy_updates_to_AOS() {
+  for (int i=0;  i < numAtoms;  i++) {
+    atom[i].velocity.x = patchDataSOA.vel_x[i];
+    atom[i].velocity.y = patchDataSOA.vel_y[i];
+    atom[i].velocity.z = patchDataSOA.vel_z[i];
+    atom[i].position.x = patchDataSOA.pos_x[i];
+    atom[i].position.y = patchDataSOA.pos_y[i];
+    atom[i].position.z = patchDataSOA.pos_z[i];
+  }
+}
+
+
 #undef DEBUG_REDISTRIB_FORCE 
 #undef DEBUG_REDISTRIB_FORCE_VERBOSE
 //#define DEBUG_REDISTRIB_FORCE
