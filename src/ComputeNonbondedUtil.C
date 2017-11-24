@@ -121,6 +121,7 @@ BigReal   ComputeNonbondedUtil::WCA_rcut1;
 BigReal   ComputeNonbondedUtil::WCA_rcut2;
 BigReal   ComputeNonbondedUtil::WCA_rcut3;
 BigReal   ComputeNonbondedUtil::alchLambda2;
+BigReal   ComputeNonbondedUtil::alchLambda3;
 BigReal   ComputeNonbondedUtil::alchRepLambda;
 BigReal   ComputeNonbondedUtil::alchDispLambda;
 BigReal   ComputeNonbondedUtil::alchElecLambda;
@@ -201,9 +202,15 @@ void ComputeNonbondedUtil::submitReductionData(BigReal *data, SubmitReduction *r
   reduction->item(REDUCTION_GO_NONNATIVE_ENERGY) += data[goNonnativeEnergyIndex];
   // End of port -- JLai
 //fepb
+//DW FEP : Add reverse reduction term
   reduction->item(REDUCTION_ELECT_ENERGY_F) += data[electEnergyIndex_s];
+  reduction->item(REDUCTION_ELECT_ENERGY_R) += data[electEnergyIndex_s_reverse];
+
   reduction->item(REDUCTION_ELECT_ENERGY_SLOW_F) += data[fullElectEnergyIndex_s];
+  reduction->item(REDUCTION_ELECT_ENERGY_SLOW_R) += data[fullElectEnergyIndex_s_reverse];
+  
   reduction->item(REDUCTION_LJ_ENERGY_F) += data[vdwEnergyIndex_s];
+  reduction->item(REDUCTION_LJ_ENERGY_R) += data[vdwEnergyIndex_s_reverse];
   reduction->item(REDUCTION_LJ_ENERGY_F_LEFT) += data[vdwEnergyIndex_s_Left];
 
   reduction->item(REDUCTION_ELECT_ENERGY_TI_1) += data[electEnergyIndex_ti_1];
@@ -301,6 +308,7 @@ void ComputeNonbondedUtil::select(void)
   Fep_Wham = simParams->alchFepWhamOn;
   alchThermIntOn = simParams->alchThermIntOn;
   alchLambda2 = 0;
+  alchLambda3 = 0;
   lesOn = simParams->lesOn;
   lesScaling = lesFactor = 0;
   Bool tabulatedEnergies = simParams->tabulatedEnergies;
@@ -355,6 +363,7 @@ void ComputeNonbondedUtil::select(void)
     NAMD_die("Alchemical free-energy perturbation is not supported in CUDA version");
 #endif
     alchLambda2 = simParams->alchLambda2;
+    alchLambda3 = simParams->alchLambda3();
     ComputeNonbondedUtil::calcPair = calc_pair_energy_fep;
     ComputeNonbondedUtil::calcPairEnergy = calc_pair_energy_fep;
     ComputeNonbondedUtil::calcSelf = calc_self_energy_fep;

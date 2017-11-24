@@ -53,10 +53,14 @@ void AngleElem::computeForce(AngleElem *tuples, int ntuple, BigReal *reduction, 
  const int step = tuples[0].p[0]->p->flags.step;
  const BigReal alchLambda = simParams->getCurrentLambda(step);
  const BigReal alchLambda2 = simParams->alchLambda2;
+ const BigReal alchLambda3 = simParams->alchLambda3();
  const BigReal bond_lambda_1 = simParams->getBondLambda(alchLambda);
  const BigReal bond_lambda_2 = simParams->getBondLambda(1-alchLambda);
  const BigReal bond_lambda_12 = simParams->getBondLambda(alchLambda2);
  const BigReal bond_lambda_22 = simParams->getBondLambda(1-alchLambda2);
+ //DoubleWide FEP
+ const BigReal bond_lambda_13 = simParams->getBondLambda(alchLambda3);
+ const BigReal bond_lambda_23 = simParams->getBondLambda(1-alchLambda3);
  Molecule *const mol = Node::Object()->molecule;
  //fepe
 
@@ -164,6 +168,7 @@ void AngleElem::computeForce(AngleElem *tuples, int ntuple, BigReal *reduction, 
     case 1:
       reduction[angleEnergyIndex_ti_1] += energy;
       reduction[angleEnergyIndex_f] += (bond_lambda_12 - bond_lambda_1)*energy; 
+      reduction[angleEnergyIndex_r] += (bond_lambda_13 - bond_lambda_1)*energy;
       energy *= bond_lambda_1;
       force1 *= bond_lambda_1;
       force2 *= bond_lambda_1;
@@ -172,6 +177,7 @@ void AngleElem::computeForce(AngleElem *tuples, int ntuple, BigReal *reduction, 
     case 2:
       reduction[angleEnergyIndex_ti_2] += energy;
       reduction[angleEnergyIndex_f] += (bond_lambda_22 - bond_lambda_2)*energy;
+      reduction[angleEnergyIndex_r] += (bond_lambda_23 - bond_lambda_2)*energy;
       energy *= bond_lambda_2;
       force1 *= bond_lambda_2;
       force2 *= bond_lambda_2;
@@ -238,6 +244,7 @@ void AngleElem::submitReductionData(BigReal *data, SubmitReduction *reduction)
 {
   reduction->item(REDUCTION_ANGLE_ENERGY) += data[angleEnergyIndex];
   reduction->item(REDUCTION_BONDED_ENERGY_F) += data[angleEnergyIndex_f];
+  reduction->item(REDUCTION_BONDED_ENERGY_R) += data[angleEnergyIndex_r];
   reduction->item(REDUCTION_BONDED_ENERGY_TI_1) += data[angleEnergyIndex_ti_1];
   reduction->item(REDUCTION_BONDED_ENERGY_TI_2) += data[angleEnergyIndex_ti_2];
   ADD_TENSOR(reduction,REDUCTION_VIRIAL_NORMAL,data,virialIndex);

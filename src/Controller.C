@@ -1265,10 +1265,12 @@ void Controller::printFepMessage(int step)
       && !simParams->alchLambdaFreq) {
     const BigReal alchLambda = simParams->alchLambda;
     const BigReal alchLambda2 = simParams->alchLambda2;
+    const BigReal alchLambda3 = simParams->alchLambda3();
     const BigReal alchTemp = simParams->alchTemp;
     const int alchEquilSteps = simParams->alchEquilSteps;
     iout << "FEP: RESETTING FOR NEW FEP WINDOW "
          << "LAMBDA SET TO " << alchLambda << " LAMBDA2 " << alchLambda2
+         << "LAMBDA3" << alchLambda3
          << "\nFEP: WINDOW TO HAVE " << alchEquilSteps
          << " STEPS OF EQUILIBRATION PRIOR TO FEP DATA COLLECTION.\n"
          << "FEP: USING CONSTANT TEMPERATURE OF " << alchTemp 
@@ -2960,8 +2962,12 @@ void Controller::printEnergies(int step, int minimize)
 
 //fepb
       bondedEnergyDiff_f = reduction->item(REDUCTION_BONDED_ENERGY_F);
+      bondedEnergyDiff_r = reduction->item(REDUCTION_BONDED_ENERGY_R);
       electEnergy_f = reduction->item(REDUCTION_ELECT_ENERGY_F);
+      electEnergy_r = reduction->item(REDUCTION_ELECT_ENERGY_R);
+      electEnergySlow_r = reduction->item(REDUCTION_ELECT_ENERGY_SLOW_R);
       ljEnergy_f = reduction->item(REDUCTION_LJ_ENERGY_F);
+      ljEnergy_r = reduction->item(REDUCTION_LJ_ENERGY_R);
       ljEnergy_f_left = reduction->item(REDUCTION_LJ_ENERGY_F_LEFT);
 
       bondedEnergy_ti_1 = reduction->item(REDUCTION_BONDED_ENERGY_TI_1);
@@ -2993,9 +2999,12 @@ void Controller::printEnergies(int step, int minimize)
       // Apply tail correction to energy.
       BigReal alchLambda = simParameters->getCurrentLambda(step);
       BigReal alchLambda2 = simParameters->alchLambda2;
+      BigReal alchLambda3 = simParameters->alchLambda3();
 
       ljEnergy += molecule->getEnergyTailCorr(alchLambda) / volume;
       ljEnergy_f += molecule->getEnergyTailCorr(alchLambda2) / volume;
+      //DoubleWide FEP
+      ljEnergy_r += molecule->getEnergyTailCorr(alchLambda3) / volume;
       ljEnergy_f_left += molecule->getEnergyTailCorr(alchLambda2) / volume;
       ljEnergy_ti_1 += molecule->tail_corr_dUdl_1 / volume;
       // NB: Rather than duplicate variables, dUdl_2 is stored as the energy.
@@ -3531,23 +3540,30 @@ void Controller::outputFepEnergy(int step) {
   const int alchEquilSteps = simParams->alchEquilSteps;
   const BigReal alchLambda = simParams->alchLambda;
   const BigReal alchLambda2 = simParams->alchLambda2;
+  const BigReal alchLambda3 = simParams->alchLambda3();
   const bool alchEnsembleAvg = simParams->alchEnsembleAvg; 
   const bool FepWhamOn = simParams->alchFepWhamOn;
+  const BigReal RT = BOLTZMANN * simParams->alchTemp;
 
   if (alchEnsembleAvg && (stepInRun == 0 || stepInRun == alchEquilSteps)) {
     FepNo = 0;
-    exp_dE_ByRT = 0.0;
-    net_dE = 0.0;
+    exp_dE_ByRT_f = 0.0;
+    exp_dE_ByRT_r = 0.0;
+    net_dE_f = 0.0;
+    net_dE_r = 0.0;
   }
-  dE = bondedEnergyDiff_f + electEnergy_f + electEnergySlow_f + ljEnergy_f -
-       electEnergy - electEnergySlow - ljEnergy;
-  BigReal RT = BOLTZMANN * simParams->alchTemp;
+  dE_f = bondedEnergyDiff_f + electEnergy_f + electEnergySlow_f + ljEnergy_f 
+         - (electEnergy + electEnergySlow + ljEnergy);
+  dE_r = bondedEnergyDiff_r + electEnergy_r + electEnergySlow_r + ljEnergy_r
+         - (electEnergy + electEnergySlow + ljEnergy);
 
   if (alchEnsembleAvg){
     FepNo++;
-    exp_dE_ByRT += exp(-dE/RT);
-    net_dE += dE;
-  }
+    exp_dE_ByRT_f += exp(-dE_f/RT);
+    exp_dE_ByRT_r += exp(-dE_r/RT);
+    net_dE_f += dE_f;
+    net_dE_r += dE_r;
+   }
 
   if (simParams->alchOutFreq) { 
     if (stepInRun == 0) {
@@ -3556,7 +3572,7 @@ void Controller::outputFepEnergy(int step) {
         fepFile.open(simParams->alchOutFile);
         iout << "OPENING FEP ENERGY OUTPUT FILE\n" << endi;
         if(alchEnsembleAvg){
-          fepSum = 0.0;
+          fepSum_f = 0.0;
           fepFile << "#            STEP                 Elec                            "
                   << "vdW                    dE           dE_avg         Temp             dG\n"
                   << "#                           l             l+dl      "
@@ -3575,7 +3591,7 @@ void Controller::outputFepEnergy(int step) {
         if(!FepWhamOn){ 
           fepFile << "#NEW FEP WINDOW: "
                   << "LAMBDA SET TO " << alchLambda << " LAMBDA2 " 
-                  << alchLambda2 << std::endl;
+                  << alchLambda2 <<" LAMBDA3 "<< alchLambda3 << std::endl;
         }
       }
     }
@@ -3589,10 +3605,10 @@ void Controller::outputFepEnergy(int step) {
       fepFile.flush();
     }
     if (alchEnsembleAvg && (step == simParams->N)) {
-      fepSum = fepSum + dG;
+      fepSum_f += dG_f;
       fepFile << "#Free energy change for lambda window [ " << alchLambda
-              << " " << alchLambda2 << " ] is " << dG 
-              << " ; net change until now is " << fepSum << std::endl;
+              << " " << alchLambda2 << " ] is " << dG_f
+              << " ; net change until now is " << fepSum_f << std::endl;
       fepFile.flush();
     }
   }
@@ -3760,7 +3776,9 @@ BigReal Controller::computeAlchWork(const int step) {
 void Controller::writeFepEnergyData(int step, ofstream_namd &file) {
   BigReal eeng = electEnergy + electEnergySlow;
   BigReal eeng_f = electEnergy_f + electEnergySlow_f;
-  BigReal dE_Left = eeng_f + ljEnergy_f_left - eeng - ljEnergy;
+  BigReal eeng_r = electEnergy_r + electEnergySlow_r;
+  BigReal dE_Left = eeng_f + ljEnergy_f_left - (eeng + ljEnergy);
+  // dE_r = (eeng_r + ljEnergy_r) - (ljEnergy + eeng);
   BigReal RT = BOLTZMANN * simParams->alchTemp;
 
   const bool alchEnsembleAvg = simParams->alchEnsembleAvg;
@@ -3781,8 +3799,10 @@ void Controller::writeFepEnergyData(int step, ofstream_namd &file) {
       fepFile << FEPTITLE(step);
       fepFile << FORMAT(eeng);
       fepFile << FORMAT(eeng_f);
+      fepFile << FORMAT(eeng_r);
       fepFile << FORMAT(ljEnergy);
       fepFile << FORMAT(ljEnergy_f);
+      fepFile << FORMAT(ljEnergy_r);
     }
     else{ // FepWhamOn = ON
       if(WCARepuOn){
@@ -3799,7 +3819,7 @@ void Controller::writeFepEnergyData(int step, ofstream_namd &file) {
           fepFile << FORMAT(WCArcut2);
           fepFile << FORMAT(WCArcut3);
           fepFile << FORMAT(0.0);
-          fepFile << FORMAT(dE);
+          fepFile << FORMAT(dE_f);
         }
         fepFile << std::endl;
       }
@@ -3813,18 +3833,24 @@ void Controller::writeFepEnergyData(int step, ofstream_namd &file) {
       }
     }
     if( ! WCARepuOn ) {
-      fepFile << FORMAT(dE);
+      fepFile << FORMAT(dE_f);
+      fepFile << FORMAT(dE_r);
     }
     if(alchEnsembleAvg){
-      BigReal dE_avg = net_dE/FepNo;
-      fepFile << FORMAT(dE_avg);
+      dE_avg_f = net_dE_f / FepNo;
+      dE_avg_r = net_dE_r / FepNo;
+      fepFile << FORMAT(dE_avg_f);
+      fepFile << FORMAT(dE_avg_r);
     }
     if(!FepWhamOn){
       fepFile << FORMAT(temperature);
     }
     if(alchEnsembleAvg){
-      dG = -(RT * log(exp_dE_ByRT/FepNo));
-      fepFile << FORMAT(dG);
+      dG_f = -(RT * log(exp_dE_ByRT_f / FepNo));
+      dG_r = -(RT * log(exp_dE_ByRT_r / FepNo));
+      dG_r = 0;
+      fepFile << FORMAT(dG_f);
+      fepFile << FORMAT(dG_r);
     } 
     if( ! WCARepuOn ) {
       fepFile << std::endl;
@@ -3837,17 +3863,17 @@ void Controller::writeTiEnergyData(int step, ofstream_namd &file) {
   tiFile << FORMAT(recent_dEdl_bond_1 / recent_TiNo);
   tiFile << FORMAT(net_dEdl_bond_1 / TiNo);
   tiFile << FORMAT(recent_dEdl_elec_1 / recent_TiNo);
-  tiFile << FORMAT(net_dEdl_elec_1/TiNo);
+  tiFile << FORMAT(net_dEdl_elec_1 / TiNo);
   tiFile << "     ";
   tiFile << FORMAT(recent_dEdl_lj_1 / recent_TiNo);
-  tiFile << FORMAT(net_dEdl_lj_1/TiNo);
+  tiFile << FORMAT(net_dEdl_lj_1 / TiNo);
   tiFile << FORMAT(recent_dEdl_bond_2 / recent_TiNo);
   tiFile << FORMAT(net_dEdl_bond_2 / TiNo);
   tiFile << FORMAT(recent_dEdl_elec_2 / recent_TiNo);
   tiFile << "     ";
-  tiFile << FORMAT(net_dEdl_elec_2/TiNo);
+  tiFile << FORMAT(net_dEdl_elec_2 / TiNo);
   tiFile << FORMAT(recent_dEdl_lj_2 / recent_TiNo);
-  tiFile << FORMAT(net_dEdl_lj_2/TiNo);
+  tiFile << FORMAT(net_dEdl_lj_2 / TiNo);
   if (simParams->alchLambdaFreq > 0) {
     tiFile << FORMAT(recent_alchWork / recent_TiNo);
     tiFile << FORMAT(cumAlchWork);

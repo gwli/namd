@@ -43,8 +43,9 @@ public:
     return 0x7FFFFFFF & ((atomID[0]<<22) + (atomID[1]<<11) + (atomID[2])); 
   }
 
-  enum { angleEnergyIndex, angleEnergyIndex_f, angleEnergyIndex_ti_1, 
-         angleEnergyIndex_ti_2, TENSOR(virialIndex), reductionDataSize };
+  enum { angleEnergyIndex, angleEnergyIndex_f, angleEnergyIndex_r,
+         angleEnergyIndex_ti_1, angleEnergyIndex_ti_2, TENSOR(virialIndex),
+         reductionDataSize };
   enum { reductionChecksumLabel = REDUCTION_ANGLE_CHECKSUM };
   static void submitReductionData(BigReal*,SubmitReduction*);
 

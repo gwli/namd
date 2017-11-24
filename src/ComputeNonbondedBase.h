@@ -294,10 +294,10 @@ void ComputeNonbondedUtil :: NAME
 
   FEP
   (
-  ENERGY( BigReal vdwEnergy_s = 0; BigReal vdwEnergy_s_Left = 0; )
+  ENERGY( BigReal vdwEnergy_s = 0; BigReal vdwEnergy_s_Left = 0;  BigReal vdwEnergy_s_reverse=0;)
   SHORT
   (
-  ENERGY( BigReal electEnergy_s = 0; )
+  ENERGY( BigReal electEnergy_s = 0; BigReal electEnergy_s_reverse = 0;)
   )
   )
   )
@@ -310,12 +310,14 @@ void ComputeNonbondedUtil :: NAME
   FEP
   (
   ENERGY( BigReal fullElectEnergy_s = 0; )
+  ENERGY( BigReal fullElectEnergy_s_reverse = 0; )
   )
   )
 #else 
   Vector fullf_net = 0.;
   BigReal fullElectEnergy = 0;
   BigReal fullElectEnergy_s = 0;
+  BigReal fullElectEnergy_s_reverse = 0;
 #endif
 
   // Bringing stuff into local namespace for speed.
@@ -404,10 +406,21 @@ void ComputeNonbondedUtil :: NAME
     BigReal elecLambdaUp = simParams->getElecLambda(lambdaUp);
     BigReal vdwLambdaUp = simParams->getVdwLambda(lambdaUp);
     BigReal vdwShiftUp = alchVdwShiftCoeff*(1 - vdwLambdaUp);
+    
+    
     FEP(BigReal lambda2Up = ComputeNonbondedUtil::alchLambda2;)
     FEP(BigReal elecLambda2Up = simParams->getElecLambda(lambda2Up);)
     FEP(BigReal vdwLambda2Up = simParams->getVdwLambda(lambda2Up);)
     FEP(BigReal vdwShift2Up = alchVdwShiftCoeff*(1 - vdwLambda2Up);)
+
+   //Doubldwide FEP - For backward direction
+    FEP(BigReal lambda3Up = ComputeNonbondedUtil::alchLambda3;)
+    FEP(BigReal elecLambda3Up = simParams->getElecLambda(lambda3Up);)
+    FEP(BigReal vdwLambda3Up = simParams->getVdwLambda(lambda3Up);)
+    FEP(BigReal vdwShift3Up = alchVdwShiftCoeff*(1 - vdwLambda3Up);)
+
+
+
 
     FEP( if( (Fep_Wham) && (Fep_WCA_repuOn) ) {
     	elecLambdaUp=0.0; 
@@ -423,6 +436,10 @@ void ComputeNonbondedUtil :: NAME
     	vdwLambda2Up=1.0;
 	vdwShiftUp = 0.0;
 	vdwShift2Up = 0.0;
+	
+	//DoubleWide FEP
+	vdwLambda3Up =1.0;
+	vdwShift3Up = 0;
     })
         
     /*lambda values 'down' are for atoms scaled down with lambda (partition 2)*/
@@ -430,10 +447,19 @@ void ComputeNonbondedUtil :: NAME
     BigReal elecLambdaDown = simParams->getElecLambda(lambdaDown);
     BigReal vdwLambdaDown = simParams->getVdwLambda(lambdaDown);
     BigReal vdwShiftDown = alchVdwShiftCoeff*(1 - vdwLambdaDown);
+    
     FEP(BigReal lambda2Down = 1 - ComputeNonbondedUtil::alchLambda2;)
     FEP(BigReal elecLambda2Down = simParams->getElecLambda(lambda2Down);)
     FEP(BigReal vdwLambda2Down = simParams->getVdwLambda(lambda2Down);)
     FEP(BigReal vdwShift2Down = alchVdwShiftCoeff*(1 - vdwLambda2Down);)
+
+    //DoubleWide FEP
+    FEP(BigReal lambda3Down = 1 - ComputeNonbondedUtil::alchLambda3;)
+    FEP(BigReal elecLambda3Down = simParams->getElecLambda(lambda3Down);)
+    FEP(BigReal vdwLambda3Down = simParams->getVdwLambda(lambda3Down);)
+    FEP(BigReal vdwShift3Down = alchVdwShiftCoeff*(1 - vdwLambda3Down);)
+    
+
 
     FEP( if( (Fep_Wham) && (Fep_WCA_repuOn) ) {
     	elecLambdaDown=0.0; 
@@ -449,6 +475,9 @@ void ComputeNonbondedUtil :: NAME
     	vdwLambda2Down = 1.0;
 	vdwShiftDown = 0.0;
 	vdwShift2Down = 0.0;
+       //Double Wide FEP
+      vdwLambda3Down=1.0;
+      vdwShift3Down=0.0;
     })
   
   // Thermodynamic Integration Notes: 
@@ -2030,16 +2059,19 @@ void ComputeNonbondedUtil :: NAME
 
 #if 0 ALCH(+1)   // nonbondedbase2 for alchemical-separeted pairlists
 
+    //DoubleWide FEP : Add Lambda3
     #undef ALCHPAIR
     #define ALCHPAIR(X) X
     #undef NOT_ALCHPAIR
     #define NOT_ALCHPAIR(X)
-    BigReal myLambda; FEP(BigReal myLambda2;)
-    BigReal myElecLambda;  FEP(BigReal myElecLambda2;)
-    BigReal myVdwLambda; FEP(BigReal myVdwLambda2;)
-    BigReal myVdwShift; FEP(BigReal myVdwShift2;)
+    BigReal myLambda; FEP(BigReal myLambda2;BigReal myLambda3;)
+    BigReal myElecLambda;  FEP(BigReal myElecLambda2; BigReal myElecLambda3;)
+    BigReal myVdwLambda; FEP(BigReal myVdwLambda2; BigReal myVdwLambda3;)
+    BigReal myVdwLambda_r;
+    BigReal myVdwShift_r;
+    BigReal myVdwShift; FEP(BigReal myVdwShift2; BigReal myVdwShift3;)
     BigReal alch_vdw_energy; BigReal alch_vdw_force;
-    FEP(BigReal alch_vdw_energy_2; BigReal alch_vdw_energy_2_Left;) TI(BigReal alch_vdw_dUdl;)
+    FEP(BigReal alch_vdw_energy_2; BigReal alch_vdw_energy_2_Left; BigReal alch_vdw_energy_3;BigReal alch_vdw_energy_3_Left;) TI(BigReal alch_vdw_dUdl;)
     BigReal shiftedElec; BigReal shiftedElecForce;
     
     /********************************************************************/
@@ -2265,11 +2297,13 @@ PAIR(
   (
     TI(reduction[vdwEnergyIndex_ti_1] += vdwEnergy_ti_1;) 
     TI(reduction[vdwEnergyIndex_ti_2] += vdwEnergy_ti_2;) 
-    FEP( reduction[vdwEnergyIndex_s] += vdwEnergy_s; )
-    FEP( reduction[vdwEnergyIndex_s_Left] += vdwEnergy_s_Left; )
+    FEP(reduction[vdwEnergyIndex_s] += vdwEnergy_s;)
+    FEP(reduction[vdwEnergyIndex_s_reverse] += vdwEnergy_s_reverse;)
+    FEP(reduction[vdwEnergyIndex_s_Left] += vdwEnergy_s_Left;)
   SHORT
   (
-    FEP( reduction[electEnergyIndex_s] += electEnergy_s; )
+    FEP(reduction[electEnergyIndex_s] += electEnergy_s;)
+    FEP(reduction[electEnergyIndex_s_reverse] +=electEnergy_s_reverse;)
     TI(reduction[electEnergyIndex_ti_1] += electEnergy_ti_1;) 
     TI(reduction[electEnergyIndex_ti_2] += electEnergy_ti_2;) 
   )
@@ -2280,7 +2314,8 @@ PAIR(
   ENERGY( reduction[fullElectEnergyIndex] += fullElectEnergy; )
   ALCH
   (
-    FEP( reduction[fullElectEnergyIndex_s] += fullElectEnergy_s; )
+    FEP(reduction[fullElectEnergyIndex_s] += fullElectEnergy_s;)
+    FEP(reduction[fullElectEnergyIndex_s_reverse] += fullElectEnergy_s_reverse;)
     TI(reduction[fullElectEnergyIndex_ti_1] += fullElectEnergy_ti_1;) 
     TI(reduction[fullElectEnergyIndex_ti_2] += fullElectEnergy_ti_2;) 
   )

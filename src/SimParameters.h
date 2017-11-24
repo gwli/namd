@@ -383,6 +383,7 @@ public:
   int alchMethod;           //  Which alchemical method to use? fep or ti
   BigReal alchLambda;       //  lambda for dynamics
   BigReal alchLambda2;      //  lambda for comparison
+  BigReal alchLambda3(void);//  lambda for double wide comparison
   int alchLambdaFreq;       //  freq. (in steps) with which lambda changes 
                             //  from alchLambda to alchLambda2
   BigReal getCurrentLambda(const int); // getter for changing lambda
