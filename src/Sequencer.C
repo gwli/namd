@@ -183,6 +183,9 @@ void Sequencer::algorithm(void)
   // of integrate() where we can avoid performing most tests.
   //
 	integrate(scriptTask);
+#if 0
+        integrate_SOA(scriptTask);
+#endif
 	break;
       default:
         NAMD_bug("Unknown task in Sequencer::algorithm");
@@ -191,6 +194,178 @@ void Sequencer::algorithm(void)
   submitCollections(END_OF_RUN);
   terminate();
 }
+
+
+#if 0
+
+//
+// begin SOA code
+//
+
+
+//
+// Cleaned up integration routine supporting only the most common features.
+//
+// Assumes:
+//   standard rRESPA MD
+//   optional rigid bond constraints
+//   optional Langevin damping
+//   optional Langevin piston
+//
+//   no minimization
+//   no accelerated MD
+//   no adaptive tempering MD
+//   no mollified impulse method
+//   no Berendsen
+//   no Lowe-Andersen
+//   no GBIS
+//   no LCPO
+//   no zero momentum
+//   no Tcl
+//   no Colvars
+//   no reassignment of velocities
+//   no lone pairs
+//   no Drude
+//   no multigrator
+//   no Langevin BAOAB
+//   no fixed atoms
+//
+void Sequencer::integrate_SOA(int scriptTask) {
+  // Copy AOS to SOA.
+  patch->copy_atoms_to_SOA();
+
+  // Keep track of the step number.
+  int &step = patch->flags.step;
+  step = simParams->firstTimestep;
+
+  // For multiple time stepping, which force boxes are used?
+  int &maxForceUsed = patch->flags.maxForceUsed;
+  int &maxForceMerged = patch->flags.maxForceMerged;
+  maxForceUsed = Results::normal;
+  maxForceMerged = Results::normal;
+
+  // Keep track of total steps, steps per cycle, and the timestep.
+  const int numberOfSteps = simParams->N;
+  const int stepsPerCycle = simParams->stepsPerCycle;
+  const BigReal timestep = simParams->dt;
+
+  const int nonbondedFrequency = simParams->nonbondedFrequency;
+  slowFreq = nonbondedFrequency;
+  const BigReal nbondstep = timestep * nonbondedFrequency;
+  int &doNonbonded = patch->flags.doNonbonded;
+  doNonbonded = (step >= numberOfSteps) || !(step%nonbondedFrequency);
+  if ( nonbondedFrequency == 1 ) maxForceMerged = Results::nbond;
+  if ( doNonbonded ) maxForceUsed = Results::nbond;
+
+  // Do we do full electrostatics?
+  const int dofull = ( simParams->fullElectFrequency ? 1 : 0 );
+  const int fullElectFrequency = simParams->fullElectFrequency;
+  if ( dofull ) slowFreq = fullElectFrequency;
+  const BigReal slowstep = timestep * fullElectFrequency;
+  int &doFullElectrostatics = patch->flags.doFullElectrostatics;
+  doFullElectrostatics = (dofull &&
+      ((step >= numberOfSteps) || !(step%fullElectFrequency)));
+  if ( dofull && fullElectFrequency == 1 ) maxForceMerged = Results::slow;
+  if ( doFullElectrostatics ) maxForceUsed = Results::slow;
+
+  // Bother to calculate energies?
+  int &doEnergy = patch->flags.doEnergy;
+  int energyFrequency = simParams->outputEnergies;
+
+  int &doVirial = patch->flags.doVirial;
+  doVirial = 1;
+
+  if ( scriptTask == SCRIPT_RUN ) {
+    rattle1_SOA(0.,0);  // enforce rigid bond constraints on initial positions
+    doEnergy = ! ( step % energyFrequency );
+    runComputeObjects_SOA(1,step<numberOfSteps); // must migrate here!
+    newtonianVelocities_SOA(-0.5,timestep,nbondstep,slowstep,0,1,1);
+    rattle1_SOA(-timestep,0);
+    submitHalfstep_SOA(step);
+    newtonianVelocities_SOA(1.0,timestep,nbondstep,slowstep,0,1,1);
+    rattle1_SOA(timestep,1);
+    submitHalfstep_SOA(step);
+    newtonianVelocities_SOA(-0.5,timestep,nbondstep,slowstep,0,1,1);
+    submitReductions_SOA(step);
+    rebalanceLoad(step);
+  } // scriptTask == SCRIPT_RUN
+
+  for ( ++step; step <= numberOfSteps; ++step ) {
+    PUSH_RANGE("integrate_SOA 1", 0);
+
+    newtonianVelocities_SOA(0.5,timestep,nbondstep,slowstep,staleForces,doNonbonded,doFullElectrostatics); 
+    maximumMove_SOA(timestep);
+
+    POP_RANGE;  // integrate_SOA 1
+
+    if ( simParams->langevinPistonOn ) {
+      addVelocityToPosition_SOA(0.5*timestep);
+      // There is a blocking receive inside of langevinPiston()
+      // that might suspend the current thread of execution,
+      // so split profiling around this conditional block.
+      langevinPiston_SOA(step);
+      addVelocityToPosition_SOA(0.5*timestep);
+    }
+    else {
+      addVelocityToPosition_SOA(timestep); 
+    }
+
+    PUSH_RANGE("integrate_SOA 2", 1);
+
+    doNonbonded = !(step%nonbondedFrequency);
+    doFullElectrostatics = (dofull && !(step%fullElectFrequency));
+
+    // There are NO sends in submitHalfstep() just local summation 
+    // into the Reduction struct.
+    submitHalfstep_SOA(step);
+
+    maxForceUsed = Results::normal;
+    if ( doNonbonded ) maxForceUsed = Results::nbond;
+    if ( doFullElectrostatics ) maxForceUsed = Results::slow;
+
+    // Migrate Atoms on stepsPerCycle
+    doEnergy = ! ( step % energyFrequency );
+    doVirial = 1;
+    doKineticEnergy = 1;
+    doMomenta = 1;
+
+    POP_RANGE;  // integrate_SOA 2
+
+    // The current thread of execution will suspend in runComputeObjects().
+    runComputeObjects_SOA(!(step%stepsPerCycle),step<numberOfSteps);
+
+    PUSH_RANGE("integrate_SOA 3", 2);
+
+    langevinVelocitiesBBK1_SOA(timestep);
+    newtonianVelocities_SOA(1.0,timestep,nbondstep,slowstep,staleForces,doNonbonded,doFullElectrostatics);
+    langevinVelocitiesBBK2_SOA(timestep);
+
+    rattle1_SOA(timestep,1);
+
+    submitHalfstep_SOA(step);
+
+    newtonianVelocities_SOA(-0.5,timestep,nbondstep,slowstep,staleForces,doNonbonded,doFullElectrostatics);
+
+    // rattle2_SOA(timestep,step);
+
+    submitReductions_SOA(step);
+    submitCollections_SOA(step);
+
+    POP_RANGE;  // integrate_SOA 3
+
+    rebalanceLoad(step);
+  }
+
+  // Copy updated SOA back to AOS.
+  patch->copy_updates_to_AOS();
+}
+
+
+//
+// end SOA code
+//
+
+#endif // 0
 
 
 extern int eventEndOfTimeStep;
