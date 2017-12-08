@@ -1388,6 +1388,7 @@ void HomePatch::copy_atoms_to_SOA() {
   if (patchDataSOA.numAtoms != numAtoms) {
     // resize the arrays to proper length
     patchDataSOA.gaussrand.resize(numAtoms);
+    patchDataSOA.hydrogenGroupSize.resize(numAtoms);
     patchDataSOA.mass.resize(numAtoms);
     patchDataSOA.recipMass.resize(numAtoms);
     patchDataSOA.langevinParam.resize(numAtoms);
@@ -1413,6 +1414,7 @@ void HomePatch::copy_atoms_to_SOA() {
 
   // copy data from AOS into SOA
   for (int i=0;  i < numAtoms;  i++) {
+    patchDataSOA.hydrogenGroupSize[i] = atom[i].hydrogenGroupSize;
     patchDataSOA.mass[i] = atom[i].mass;
     patchDataSOA.langevinParam[i] = atom[i].langevinParam;
     patchDataSOA.vel_x[i] = atom[i].velocity.x;
@@ -1469,12 +1471,26 @@ void HomePatch::copy_forces_to_SOA() {
       patchDataSOA.f_nbond_z[i] = fnbond[i].z;
     }
   }
+  else {
+    for (int i=0;  i < numAtoms;  i++) {
+      patchDataSOA.f_nbond_x[i] = 0;
+      patchDataSOA.f_nbond_y[i] = 0;
+      patchDataSOA.f_nbond_z[i] = 0;
+    }
+  }
   if (flags.doFullElectrostatics) {
     const ResizeArray<Force>& fslow = f[Results::slow];
     for (int i = 0;  i < numAtoms;  i++) {
       patchDataSOA.f_slow_x[i] = fslow[i].x;
       patchDataSOA.f_slow_y[i] = fslow[i].y;
       patchDataSOA.f_slow_z[i] = fslow[i].z;
+    }
+  }
+  else {
+    for (int i = 0;  i < numAtoms;  i++) {
+      patchDataSOA.f_slow_x[i] = 0;
+      patchDataSOA.f_slow_y[i] = 0;
+      patchDataSOA.f_slow_z[i] = 0;
     }
   }
 }

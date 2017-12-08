@@ -196,8 +196,9 @@ void Sequencer::algorithm(void)
 }
 
 
-#if 0
+#ifdef SEQUENCER_SOA
 
+//////////////////////////////////////////////////////////////////////////
 //
 // begin SOA code
 //
@@ -231,6 +232,12 @@ void Sequencer::algorithm(void)
 //   no fixed atoms
 //
 void Sequencer::integrate_SOA(int scriptTask) {
+  //
+  // Below when accessing the array buffers for position, velocity, force,
+  // note that we don't want to set up pointers directly to the buffers
+  // because the allocations might get resized after atom migration.
+  //
+
   // Copy AOS to SOA.
   patch->copy_atoms_to_SOA();
 
@@ -244,13 +251,15 @@ void Sequencer::integrate_SOA(int scriptTask) {
   maxForceUsed = Results::normal;
   maxForceMerged = Results::normal;
 
-  // Keep track of total steps, steps per cycle, and the timestep.
+  // Keep track of total steps and steps per cycle.
   const int numberOfSteps = simParams->N;
   const int stepsPerCycle = simParams->stepsPerCycle;
-  const BigReal timestep = simParams->dt;
+  // The fundamental time step, get the scaling right for velocity units.
+  const BigReal timestep = simParams->dt * RECIP_TIMEFACTOR;
 
   const int nonbondedFrequency = simParams->nonbondedFrequency;
   slowFreq = nonbondedFrequency;
+  // The step size for short-range nonbonded forces.
   const BigReal nbondstep = timestep * nonbondedFrequency;
   int &doNonbonded = patch->flags.doNonbonded;
   doNonbonded = (step >= numberOfSteps) || !(step%nonbondedFrequency);
@@ -261,6 +270,7 @@ void Sequencer::integrate_SOA(int scriptTask) {
   const int dofull = ( simParams->fullElectFrequency ? 1 : 0 );
   const int fullElectFrequency = simParams->fullElectFrequency;
   if ( dofull ) slowFreq = fullElectFrequency;
+  // The step size for long-range electrostatics.
   const BigReal slowstep = timestep * fullElectFrequency;
   int &doFullElectrostatics = patch->flags.doFullElectrostatics;
   doFullElectrostatics = (dofull &&
@@ -279,35 +289,176 @@ void Sequencer::integrate_SOA(int scriptTask) {
     rattle1_SOA(0.,0);  // enforce rigid bond constraints on initial positions
     doEnergy = ! ( step % energyFrequency );
     runComputeObjects_SOA(1,step<numberOfSteps); // must migrate here!
-    newtonianVelocities_SOA(-0.5,timestep,nbondstep,slowstep,0,1,1);
+
+    // kick -0.5
+    addForceToMomentum_SOA(-0.5, timestep, nbondstep, slowstep,
+        patch->patchDataSOA.recipMass.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.vel_x.begin(),
+        patch->patchDataSOA.vel_y.begin(),
+        patch->patchDataSOA.vel_z.begin(),
+        patch->patchDataSOA.numAtoms,
+        maxForceUsed
+        );
+
     rattle1_SOA(-timestep,0);
-    submitHalfstep_SOA(step);
-    newtonianVelocities_SOA(1.0,timestep,nbondstep,slowstep,0,1,1);
+    submitHalfstep_SOA(
+        patch->patchDataSOA.hydrogenGroupSize.const_begin(),
+        patch->patchDataSOA.mass.const_begin(),
+        patch->patchDataSOA.vel_x.const_begin(),
+        patch->patchDataSOA.vel_y.const_begin(),
+        patch->patchDataSOA.vel_z.const_begin(),
+        patch->patchDataSOA.numAtoms
+        );
+
+
+    // kick 1.0
+    addForceToMomentum_SOA(1.0, timestep, nbondstep, slowstep,
+        patch->patchDataSOA.recipMass.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.vel_x.begin(),
+        patch->patchDataSOA.vel_y.begin(),
+        patch->patchDataSOA.vel_z.begin(),
+        patch->patchDataSOA.numAtoms,
+        maxForceUsed
+        );
+
     rattle1_SOA(timestep,1);
-    submitHalfstep_SOA(step);
-    newtonianVelocities_SOA(-0.5,timestep,nbondstep,slowstep,0,1,1);
-    submitReductions_SOA(step);
+    submitHalfstep_SOA(
+        patch->patchDataSOA.hydrogenGroupSize.const_begin(),
+        patch->patchDataSOA.mass.const_begin(),
+        patch->patchDataSOA.vel_x.const_begin(),
+        patch->patchDataSOA.vel_y.const_begin(),
+        patch->patchDataSOA.vel_z.const_begin(),
+        patch->patchDataSOA.numAtoms
+        );
+
+
+    // kick -0.5
+    addForceToMomentum_SOA(-0.5, timestep, nbondstep, slowstep,
+        patch->patchDataSOA.recipMass.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.vel_x.begin(),
+        patch->patchDataSOA.vel_y.begin(),
+        patch->patchDataSOA.vel_z.begin(),
+        patch->patchDataSOA.numAtoms,
+        maxForceUsed
+        );
+
+    submitReductions_SOA(
+        patch->patchDataSOA.hydrogenGroupSize.const_begin(),
+        patch->patchDataSOA.mass.const_begin(),
+        patch->patchDataSOA.pos_x.const_begin(),
+        patch->patchDataSOA.pos_y.const_begin(),
+        patch->patchDataSOA.pos_z.const_begin(),
+        patch->patchDataSOA.vel_x.const_begin(),
+        patch->patchDataSOA.vel_y.const_begin(),
+        patch->patchDataSOA.vel_z.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.numAtoms
+        );
+
     rebalanceLoad(step);
   } // scriptTask == SCRIPT_RUN
 
   for ( ++step; step <= numberOfSteps; ++step ) {
     PUSH_RANGE("integrate_SOA 1", 0);
 
-    newtonianVelocities_SOA(0.5,timestep,nbondstep,slowstep,staleForces,doNonbonded,doFullElectrostatics); 
+    // kick 0.5
+    addForceToMomentum_SOA(0.5, timestep, nbondstep, slowstep,
+        patch->patchDataSOA.recipMass.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.vel_x.begin(),
+        patch->patchDataSOA.vel_y.begin(),
+        patch->patchDataSOA.vel_z.begin(),
+        patch->patchDataSOA.numAtoms,
+        maxForceUsed
+        );
+
     maximumMove_SOA(timestep);
 
     POP_RANGE;  // integrate_SOA 1
 
     if ( simParams->langevinPistonOn ) {
-      addVelocityToPosition_SOA(0.5*timestep);
+
+      // drift 0.5
+      addVelocityToPosition_SOA(0.5*timestep,
+          patch->patchDataSOA.vel_x.const_begin(),
+          patch->patchDataSOA.vel_y.const_begin(),
+          patch->patchDataSOA.vel_z.const_begin(),
+          patch->patchDataSOA.pos_x.begin(),
+          patch->patchDataSOA.pos_y.begin(),
+          patch->patchDataSOA.pos_z.begin(),
+          patch->patchDataSOA.numAtoms
+          );
+
       // There is a blocking receive inside of langevinPiston()
       // that might suspend the current thread of execution,
       // so split profiling around this conditional block.
       langevinPiston_SOA(step);
-      addVelocityToPosition_SOA(0.5*timestep);
+
+      // drift 0.5
+      addVelocityToPosition_SOA(0.5*timestep,
+          patch->patchDataSOA.vel_x.const_begin(),
+          patch->patchDataSOA.vel_y.const_begin(),
+          patch->patchDataSOA.vel_z.const_begin(),
+          patch->patchDataSOA.pos_x.begin(),
+          patch->patchDataSOA.pos_y.begin(),
+          patch->patchDataSOA.pos_z.begin(),
+          patch->patchDataSOA.numAtoms
+          );
     }
     else {
-      addVelocityToPosition_SOA(timestep); 
+      // drift 1.0
+      addVelocityToPosition_SOA(timestep,
+          patch->patchDataSOA.vel_x.const_begin(),
+          patch->patchDataSOA.vel_y.const_begin(),
+          patch->patchDataSOA.vel_z.const_begin(),
+          patch->patchDataSOA.pos_x.begin(),
+          patch->patchDataSOA.pos_y.begin(),
+          patch->patchDataSOA.pos_z.begin(),
+          patch->patchDataSOA.numAtoms
+          );
     }
 
     PUSH_RANGE("integrate_SOA 2", 1);
@@ -317,7 +468,15 @@ void Sequencer::integrate_SOA(int scriptTask) {
 
     // There are NO sends in submitHalfstep() just local summation 
     // into the Reduction struct.
-    submitHalfstep_SOA(step);
+    submitHalfstep_SOA(
+        patch->patchDataSOA.hydrogenGroupSize.const_begin(),
+        patch->patchDataSOA.mass.const_begin(),
+        patch->patchDataSOA.vel_x.const_begin(),
+        patch->patchDataSOA.vel_y.const_begin(),
+        patch->patchDataSOA.vel_z.const_begin(),
+        patch->patchDataSOA.numAtoms
+        );
+
 
     maxForceUsed = Results::normal;
     if ( doNonbonded ) maxForceUsed = Results::nbond;
@@ -337,18 +496,80 @@ void Sequencer::integrate_SOA(int scriptTask) {
     PUSH_RANGE("integrate_SOA 3", 2);
 
     langevinVelocitiesBBK1_SOA(timestep);
-    newtonianVelocities_SOA(1.0,timestep,nbondstep,slowstep,staleForces,doNonbonded,doFullElectrostatics);
+
+    // kick 1.0
+    addForceToMomentum_SOA(1.0, timestep, nbondstep, slowstep,
+        patch->patchDataSOA.recipMass.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.vel_x.begin(),
+        patch->patchDataSOA.vel_y.begin(),
+        patch->patchDataSOA.vel_z.begin(),
+        patch->patchDataSOA.numAtoms,
+        maxForceUsed
+        );
+
     langevinVelocitiesBBK2_SOA(timestep);
 
     rattle1_SOA(timestep,1);
 
-    submitHalfstep_SOA(step);
+    submitHalfstep_SOA(
+        patch->patchDataSOA.hydrogenGroupSize.const_begin(),
+        patch->patchDataSOA.mass.const_begin(),
+        patch->patchDataSOA.vel_x.const_begin(),
+        patch->patchDataSOA.vel_y.const_begin(),
+        patch->patchDataSOA.vel_z.const_begin(),
+        patch->patchDataSOA.numAtoms
+        );
 
-    newtonianVelocities_SOA(-0.5,timestep,nbondstep,slowstep,staleForces,doNonbonded,doFullElectrostatics);
+    // kick -0.5
+    addForceToMomentum_SOA(-0.5, timestep, nbondstep, slowstep,
+        patch->patchDataSOA.recipMass.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.vel_x.begin(),
+        patch->patchDataSOA.vel_y.begin(),
+        patch->patchDataSOA.vel_z.begin(),
+        patch->patchDataSOA.numAtoms,
+        maxForceUsed
+        );
 
     // rattle2_SOA(timestep,step);
 
-    submitReductions_SOA(step);
+    submitReductions_SOA(
+        patch->patchDataSOA.hydrogenGroupSize.const_begin(),
+        patch->patchDataSOA.mass.const_begin(),
+        patch->patchDataSOA.pos_x.const_begin(),
+        patch->patchDataSOA.pos_y.const_begin(),
+        patch->patchDataSOA.pos_z.const_begin(),
+        patch->patchDataSOA.vel_x.const_begin(),
+        patch->patchDataSOA.vel_y.const_begin(),
+        patch->patchDataSOA.vel_z.const_begin(),
+        patch->patchDataSOA.f_normal_x.const_begin(),
+        patch->patchDataSOA.f_normal_y.const_begin(),
+        patch->patchDataSOA.f_normal_z.const_begin(),
+        patch->patchDataSOA.f_nbond_x.const_begin(),
+        patch->patchDataSOA.f_nbond_y.const_begin(),
+        patch->patchDataSOA.f_nbond_z.const_begin(),
+        patch->patchDataSOA.f_slow_x.const_begin(),
+        patch->patchDataSOA.f_slow_y.const_begin(),
+        patch->patchDataSOA.f_slow_z.const_begin(),
+        patch->patchDataSOA.numAtoms
+        );
     submitCollections_SOA(step);
 
     POP_RANGE;  // integrate_SOA 3
@@ -361,11 +582,484 @@ void Sequencer::integrate_SOA(int scriptTask) {
 }
 
 
+// XXX inline it?
+// XXX does not handle fixed atoms
+// Each timestep:  dt = scaling * (timestep / TIMEFACTOR);
+void Sequencer::addForceToMomentum_SOA(
+    const double scaling,
+    const double dt_normal,                // timestep Result::normal = 0
+    const double dt_nbond,                 // timestep Result::nbond  = 1
+    const double dt_slow,                  // timestep Result::slow   = 2
+    const float  * __restrict recipMass;
+    const double * __restrict f_normal_x,  // force    Result::normal = 0
+    const double * __restrict f_normal_y,
+    const double * __restrict f_normal_z,
+    const double * __restrict f_nbond_x,   // force    Result::nbond  = 1
+    const double * __restrict f_nbond_y,
+    const double * __restrict f_nbond_z,
+    const double * __restrict f_slow_x,    // force    Result::slow   = 2
+    const double * __restrict f_slow_y,
+    const double * __restrict f_slow_z,
+    double       * __restrict vel_x,
+    double       * __restrict vel_y,
+    double       * __restrict vel_z,
+    int numAtoms,
+    int maxForceNumber
+    ) {
+  RANGE("addForceToMomentum_SOA", 3);
+  //
+  // We could combine each case into a single loop with breaks,
+  // with all faster forces also summed, like addForceToMomentum3().
+  //
+  // Things to consider:
+  // - Do we always use acceleration (f/m) instead of just plain force? 
+  //   Then we could instead buffer accel_slow, accel_nbond, etc.
+  // - We will always need one multiply, since each dt includes
+  //   also a scaling factor.
+  //
+  switch (maxForceNumber) {
+    case Result::slow:
+      dt_normal *= scaling;
+      for (int i=0;  i < numAtoms;  i++) {
+        vel_x[i] += f_slow_x[i] * recipMass[i] * dt_slow;
+        vel_y[i] += f_slow_y[i] * recipMass[i] * dt_slow;
+        vel_z[i] += f_slow_z[i] * recipMass[i] * dt_slow;
+      }
+      // fall through because we will always have the "faster" forces
+    case Result::nbond:
+      dt_nbond *= scaling;
+      for (int i=0;  i < numAtoms;  i++) {
+        vel_x[i] += f_nbond_x[i] * recipMass[i] * dt_nbond;
+        vel_y[i] += f_nbond_y[i] * recipMass[i] * dt_nbond;
+        vel_z[i] += f_nbond_z[i] * recipMass[i] * dt_nbond;
+      }
+      // fall through because we will always have the "faster" forces
+    case Result::normal:
+      dt_slow *= scaling;
+      for (int i=0;  i < numAtoms;  i++) {
+        vel_x[i] += f_normal_x[i] * recipMass[i] * dt_normal;
+        vel_y[i] += f_normal_y[i] * recipMass[i] * dt_normal;
+        vel_z[i] += f_normal_z[i] * recipMass[i] * dt_normal;
+      }
+  }
+}
+
+
+// XXX inline it?
+// XXX does not handle fixed atoms
+// Timestep:  dt = scaling * (timestep / TIMEFACTOR);
+void Sequencer::addVelocityToPosition_SOA(
+    const double dt,  ///< scaled timestep
+    const double * __restrict vel_x,
+    const double * __restrict vel_y,
+    const double * __restrict vel_z,
+    double *       __restrict pos_x,
+    double *       __restrict pos_y,
+    double *       __restrict pos_z,
+    int numAtoms      ///< number of atoms
+    ) {
+  RANGE("addVelocityToPosition_SOA", 5);
+  for (int i=0;  i < numAtoms;  i++) {
+    pos_x[i] += vel_x[i] * dt;
+    pos_y[i] += vel_y[i] * dt;
+    pos_z[i] += vel_z[i] * dt;
+  }
+}
+
+
+void Sequencer::submitHalfstep_SOA(
+    const int    * __restrict hydrogenGroupSize,
+    const float  * __restrict mass,
+    const double * __restrict vel_x,
+    const double * __restrict vel_y,
+    const double * __restrict vel_z,
+    int numAtoms
+    ) {
+  RANGE("submitHalfstep_SOA", 6);
+  if ( 1 /* doKineticEnergy || patch->flags.doVirial */ ) {
+    BigReal kineticEnergy = 0;
+    Tensor virial;
+    for (int i=0;  i < numAtoms;  i++) {
+      // (kinetic energy) += mass * vel^2
+      kineticEnergy += mass[i] *
+        (vel_x[i]*vel_x[i] + vel_y[i]*vel_y[i] + vel_z[i]*vel_z[i]);
+      // virial += mass * outer_product(vel, vel)
+      virial.xx += mass[i] * vel_x[i] * vel_x[i];
+      virial.xy += mass[i] * vel_x[i] * vel_y[i];
+      virial.xz += mass[i] * vel_x[i] * vel_z[i];
+      virial.yx += mass[i] * vel_y[i] * vel_x[i];
+      virial.yy += mass[i] * vel_y[i] * vel_y[i];
+      virial.yz += mass[i] * vel_y[i] * vel_z[i];
+      virial.zx += mass[i] * vel_z[i] * vel_x[i];
+      virial.zy += mass[i] * vel_z[i] * vel_y[i];
+      virial.zz += mass[i] * vel_z[i] * vel_z[i];
+    }
+    kineticEnergy *= 0.5 * 0.5;
+    reduction->item(REDUCTION_HALFSTEP_KINETIC_ENERGY) += kineticEnergy;
+    virial *= 0.5;
+    ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_NORMAL,virial);
+  }
+ 
+  if ( 1 /* doKineticEnergy || patch->flags.doVirial */ ) {
+    BigReal intKineticEnergy = 0;
+    Tensor intVirialNormal;
+    int hgs;
+    for (int i=0;  i < numAtoms;  i += hgs) {
+      // find velocity of center-of-mass of hydrogen group
+      // calculate mass-weighted velocity
+      hgs = hydrogenGroupSize[i];
+      BigReal m_cm = 0;
+      BigReal v_cm_x = 0;
+      BigReal v_cm_y = 0;
+      BigReal v_cm_z = 0;
+      for (int j = i;  j < (i+hgs);  j++) {
+        m_cm += mass[j];
+        v_cm_x += mass[j] * vel_x[j];
+        v_cm_y += mass[j] * vel_x[j];
+        v_cm_z += mass[j] * vel_x[j];
+      }
+      BigReal recip_m_cm = 1.0 / m_cm;
+      v_cm_x *= recip_m_cm;
+      v_cm_y *= recip_m_cm;
+      v_cm_z *= recip_m_cm;
+      // sum virial contributions wrt vel center-of-mass
+      for (int j = i;  j < (i+hgs);  j++) {
+        BigReal dv_x = vel_x[j] - v_cm_x;
+        BigReal dv_y = vel_y[j] - v_cm_y;
+        BigReal dv_z = vel_z[j] - v_cm_z;
+        // (internal kinetic energy) += mass * inner_product(vel, dv)
+        intKineticEnergy += mass[j] *
+          (vel_x[j] * dv_x + vel_y[j] * dv_y + vel_z[j] * dv_z);
+        // (internal virial) += mass * outer_product(vel, dv)
+        intVirialNormal.xx += mass[j] * vel_x[j] * dv_x;
+        intVirialNormal.xy += mass[j] * vel_x[j] * dv_y;
+        intVirialNormal.xz += mass[j] * vel_x[j] * dv_z;
+        intVirialNormal.yx += mass[j] * vel_y[j] * dv_x;
+        intVirialNormal.yy += mass[j] * vel_y[j] * dv_y;
+        intVirialNormal.yz += mass[j] * vel_y[j] * dv_z;
+        intVirialNormal.zx += mass[j] * vel_y[j] * dv_x;
+        intVirialNormal.zy += mass[j] * vel_y[j] * dv_y;
+        intVirialNormal.zz += mass[j] * vel_y[j] * dv_z;
+      }
+    }
+    intKineticEnergy *= 0.5 * 0.5;
+    reduction->item(REDUCTION_INT_HALFSTEP_KINETIC_ENERGY)
+      += intKineticEnergy;
+    intVirialNormal *= 0.5;
+    ADD_TENSOR_OBJECT(reduction, REDUCTION_INT_VIRIAL_NORMAL,
+        intVirialNormal);
+  }
+}
+
+
+//
+// XXX
+//
+void Sequencer::submitReductions_SOA(
+    const int    * __restrict hydrogenGroupSize,
+    const float  * __restrict mass,
+    const double * __restrict pos_x,
+    const double * __restrict pos_y,
+    const double * __restrict pos_z,
+    const double * __restrict vel_x,
+    const double * __restrict vel_y,
+    const double * __restrict vel_z,
+    const double * __restrict f_normal_x,
+    const double * __restrict f_normal_y,
+    const double * __restrict f_normal_z,
+    const double * __restrict f_nbond_x,
+    const double * __restrict f_nbond_y,
+    const double * __restrict f_nbond_z,
+    const double * __restrict f_slow_x,
+    const double * __restrict f_slow_y,
+    const double * __restrict f_slow_z,
+    int numAtoms
+    ) {
+  RANGE("submitReductions", 10);
+  reduction->item(REDUCTION_ATOM_CHECKSUM) += numAtoms;
+  reduction->item(REDUCTION_MARGIN_VIOLATIONS) += patch->marginViolations;
+  if ( 1 /* doKineticEnergy || doMomenta || patch->flags.doVirial */ ) {
+    BigReal kineticEnergy = 0;
+    BigReal momentum_x = 0;
+    BigReal momentum_y = 0;
+    BigReal momentum_z = 0;
+    BigReal angularMomentum_x = 0;
+    BigReal angularMomentum_y = 0;
+    BigReal angularMomentum_z = 0;
+    BigReal origin_x = patch->lattice.origin().x;
+    BigReal origin_y = patch->lattice.origin().y;
+    BigReal origin_z = patch->lattice.origin().z;
+#if 0
+    if ( simParams->pairInteractionOn ) {
+      if ( simParams->pairInteractionSelf ) {
+        for (i = 0; i < numAtoms; ++i ) {
+          if ( a[i].partition != 1 ) continue;
+          kineticEnergy += a[i].mass * a[i].velocity.length2();
+          momentum += a[i].mass * a[i].velocity;
+          angularMomentum += cross(a[i].mass,a[i].position-o,a[i].velocity);
+        }
+      }
+    } else {
+#endif
+      for (int i=0;  i < numAtoms;  i++) {
+        kineticEnergy += mass[i] *
+          (vel_x[i]*vel_x[i] + vel_y[i]*vel_y[i] + vel_z[i]*vel_z[i]);
+        momentum_x += mass[i] * vel_x[i];
+        momentum_y += mass[i] * vel_y[i];
+        momentum_z += mass[i] * vel_z[i];
+        BigReal dpos_x = pos_x[i] - origin_x;
+        BigReal dpos_y = pos_y[i] - origin_y;
+        BigReal dpos_z = pos_z[i] - origin_z;
+        angularMomentum_x += mass[i] * (dpos_y*vel_z[i] - dpos_z*vel_y[i]);
+        angularMomentum_y += mass[i] * (dpos_z*vel_x[i] - dpos_x*vel_z[i]);
+        angularMomentum_z += mass[i] * (dpos_x*vel_y[i] - dpos_y*vel_x[i]);
+        //angularMomentum += cross(a[i].mass,a[i].position-o,a[i].velocity);
+      }
+#if 0
+      if (simParams->drudeOn) {
+        BigReal drudeComKE = 0.;
+        BigReal drudeBondKE = 0.;
+
+        for (i = 0;  i < numAtoms;  i++) {
+          if (i < numAtoms-1 &&
+              a[i+1].mass < 1.0 && a[i+1].mass >= 0.001) {
+            // i+1 is a Drude particle with parent i
+
+            // convert from Cartesian coordinates to (COM,bond) coordinates
+            BigReal m_com = (a[i].mass + a[i+1].mass);  // mass of COM
+            BigReal m = a[i+1].mass / m_com;  // mass ratio
+            BigReal m_bond = a[i+1].mass * (1. - m);  // mass of bond
+            Vector v_bond = a[i+1].velocity - a[i].velocity;  // vel of bond
+            Vector v_com = a[i].velocity + m * v_bond;  // vel of COM
+
+            drudeComKE += m_com * v_com.length2();
+            drudeBondKE += m_bond * v_bond.length2();
+
+            i++;  // +1 from loop, we've updated both particles
+          }
+          else {
+            drudeComKE += a[i].mass * a[i].velocity.length2();
+          }
+        } // end for
+
+        drudeComKE *= 0.5;
+        drudeBondKE *= 0.5;
+        reduction->item(REDUCTION_DRUDECOM_CENTERED_KINETIC_ENERGY)
+          += drudeComKE;
+        reduction->item(REDUCTION_DRUDEBOND_CENTERED_KINETIC_ENERGY)
+          += drudeBondKE;
+      } // end drudeOn
+#endif
+
+#if 0
+    } // end else
+#endif
+
+    kineticEnergy *= 0.5;
+    reduction->item(REDUCTION_CENTERED_KINETIC_ENERGY) += kineticEnergy;
+    ADD_VECTOR_OBJECT(reduction,REDUCTION_MOMENTUM,momentum);
+    ADD_VECTOR_OBJECT(reduction,REDUCTION_ANGULAR_MOMENTUM,angularMomentum);  
+  }
+
+  // For non-Multigrator doKineticEnergy = 1 always
+  if ( 1 /* doKineticEnergy || patch->flags.doVirial */ ) {
+    BigReal intKineticEnergy = 0;
+    Tensor intVirialNormal;
+    Tensor intVirialNbond;
+    Tensor intVirialSlow;
+
+    int hgs = 1;  // hydrogen group size
+    for (int i=0;  i < numAtoms;  i += hgs) {
+      hgs = hydrogenGroupSize[i];
+      int j;
+      BigReal m_cm = 0;
+      BigReal r_cm_x = 0;
+      BigReal r_cm_y = 0;
+      BigReal r_cm_z = 0;
+      BigReal v_cm_x = 0;
+      BigReal v_cm_y = 0;
+      BigReal v_cm_z = 0;
+      //Position x_cm(0,0,0);
+      //Velocity v_cm(0,0,0);
+      for ( j = i; j < (i+hgs); ++j ) {
+        m_cm += mass[j];
+        r_cm_x += mass[j] * pos_x[j];
+        r_cm_y += mass[j] * pos_y[j];
+        r_cm_z += mass[j] * pos_z[j];
+        v_cm_x += mass[j] * vel_x[j];
+        v_cm_y += mass[j] * vel_y[j];
+        v_cm_z += mass[j] * vel_z[j];
+      }
+      BigReal inv_m_cm = 1/m_cm;
+      r_cm_x *= inv_m_cm;
+      r_cm_y *= inv_m_cm;
+      r_cm_z *= inv_m_cm;
+      v_cm_x *= inv_m_cm;
+      v_cm_y *= inv_m_cm;
+      v_cm_z *= inv_m_cm;
+      //x_cm /= m_cm;
+      //v_cm /= m_cm;
+      //int fixedAtomsOn = simParams->fixedAtomsOn;
+#if 0
+      if ( simParams->pairInteractionOn ) {
+        int pairInteractionSelf = simParams->pairInteractionSelf;
+        for ( j = i; j < (i+hgs); ++j ) {
+          if ( a[j].partition != 1 &&
+               ( pairInteractionSelf || a[j].partition != 2 ) ) continue;
+          // net force treated as zero for fixed atoms
+          if ( fixedAtomsOn && a[j].atomFixed ) continue;
+          BigReal mass = a[j].mass;
+          Vector v = a[j].velocity;
+          Vector dv = v - v_cm;
+          intKineticEnergy += mass * (v * dv);
+          Vector dx = a[j].position - x_cm;
+          intVirialNormal.outerAdd(1.0, patch->f[Results::normal][j], dx);
+          intVirialNbond.outerAdd(1.0, patch->f[Results::nbond][j], dx);
+          intVirialSlow.outerAdd(1.0, patch->f[Results::slow][j], dx);
+        }
+      } else {
+#endif
+        for ( j = i; j < (i+hgs); ++j ) {
+          // net force treated as zero for fixed atoms
+          //if ( fixedAtomsOn && a[j].atomFixed ) continue;
+          BigReal v_x = vel_x[j];
+          BigReal v_y = vel_y[j];
+          BigReal v_z = vel_z[j];
+          //Vector v = a[j].velocity;
+          BigReal dv_x = v_x - v_cm_x;
+          BigReal dv_y = v_y - v_cm_y;
+          BigReal dv_z = v_z - v_cm_z;
+          //Vector dv = v - v_cm;
+          intKineticEnergy += mass[j] *
+            (v_x * dv_x + v_y * dv_y + v_z * dv_z);
+          //intKineticEnergy += mass * (v * dv);
+          BigReal dr_x = pos_x[j] - r_cm_x;
+          BigReal dr_y = pos_y[j] - r_cm_y;
+          BigReal dr_z = pos_z[j] - r_cm_z;
+          //Vector dx = a[j].position - x_cm;
+          intVirialNormal.xx += f_normal_x[j] * dr_x;
+          intVirialNormal.xy += f_normal_x[j] * dr_y;
+          intVirialNormal.xz += f_normal_x[j] * dr_z;
+          intVirialNormal.yx += f_normal_y[j] * dr_x;
+          intVirialNormal.yy += f_normal_y[j] * dr_y;
+          intVirialNormal.yz += f_normal_y[j] * dr_z;
+          intVirialNormal.zx += f_normal_z[j] * dr_x;
+          intVirialNormal.zy += f_normal_z[j] * dr_y;
+          intVirialNormal.zz += f_normal_z[j] * dr_z;
+          //intVirialNormal.outerAdd(1.0, patch->f[Results::normal][j], dx);
+          intVirialNbond.xx += f_nbond_x[j] * dr_x;
+          intVirialNbond.xy += f_nbond_x[j] * dr_y;
+          intVirialNbond.xz += f_nbond_x[j] * dr_z;
+          intVirialNbond.yx += f_nbond_y[j] * dr_x;
+          intVirialNbond.yy += f_nbond_y[j] * dr_y;
+          intVirialNbond.yz += f_nbond_y[j] * dr_z;
+          intVirialNbond.zx += f_nbond_z[j] * dr_x;
+          intVirialNbond.zy += f_nbond_z[j] * dr_y;
+          intVirialNbond.zz += f_nbond_z[j] * dr_z;
+          //intVirialNbond.outerAdd(1.0, patch->f[Results::nbond][j], dx);
+          intVirialSlow.xx += f_slow_x[j] * dr_x;
+          intVirialSlow.xy += f_slow_x[j] * dr_y;
+          intVirialSlow.xz += f_slow_x[j] * dr_z;
+          intVirialSlow.yx += f_slow_y[j] * dr_x;
+          intVirialSlow.yy += f_slow_y[j] * dr_y;
+          intVirialSlow.yz += f_slow_y[j] * dr_z;
+          intVirialSlow.zx += f_slow_z[j] * dr_x;
+          intVirialSlow.zy += f_slow_z[j] * dr_y;
+          intVirialSlow.zz += f_slow_z[j] * dr_z;
+          //intVirialSlow.outerAdd(1.0, patch->f[Results::slow][j], dx);
+        }
+#if 0
+      }
+#endif
+    }
+
+    intKineticEnergy *= 0.5;
+    reduction->item(REDUCTION_INT_CENTERED_KINETIC_ENERGY) += intKineticEnergy;
+    ADD_TENSOR_OBJECT(reduction,REDUCTION_INT_VIRIAL_NORMAL,intVirialNormal);
+    ADD_TENSOR_OBJECT(reduction,REDUCTION_INT_VIRIAL_NBOND,intVirialNbond);
+    ADD_TENSOR_OBJECT(reduction,REDUCTION_INT_VIRIAL_SLOW,intVirialSlow);
+  }
+
+#if 0
+  if (pressureProfileReduction && simParams->useGroupPressure) {
+    // subtract off internal virial term, calculated as for intVirial.
+    int nslabs = simParams->pressureProfileSlabs;
+    const Lattice &lattice = patch->lattice;
+    BigReal idz = nslabs/lattice.c().z;
+    BigReal zmin = lattice.origin().z - 0.5*lattice.c().z;
+    int useGroupPressure = simParams->useGroupPressure;
+
+    int hgs;
+    for (int i=0; i<numAtoms; i += hgs) {
+      int j;
+      hgs = a[i].hydrogenGroupSize;
+      BigReal m_cm = 0;
+      Position x_cm(0,0,0);
+      for (j=i; j< i+hgs; ++j) {
+        m_cm += a[j].mass;
+        x_cm += a[j].mass * a[j].position;
+      }
+      x_cm /= m_cm;
+      
+      BigReal z = a[i].position.z;
+      int slab = (int)floor((z-zmin)*idz);
+      if (slab < 0) slab += nslabs;
+      else if (slab >= nslabs) slab -= nslabs;
+      int partition = a[i].partition;
+      int ppoffset = 3*(slab + nslabs*partition);
+      for (j=i; j < i+hgs; ++j) {
+        BigReal mass = a[j].mass;
+        Vector dx = a[j].position - x_cm;
+        const Vector &fnormal = patch->f[Results::normal][j];
+        const Vector &fnbond  = patch->f[Results::nbond][j];
+        const Vector &fslow   = patch->f[Results::slow][j];
+        BigReal wxx = (fnormal.x + fnbond.x + fslow.x) * dx.x;
+        BigReal wyy = (fnormal.y + fnbond.y + fslow.y) * dx.y;
+        BigReal wzz = (fnormal.z + fnbond.z + fslow.z) * dx.z;
+        pressureProfileReduction->item(ppoffset  ) -= wxx;
+        pressureProfileReduction->item(ppoffset+1) -= wyy;
+        pressureProfileReduction->item(ppoffset+2) -= wzz;
+      }
+    }
+  }
+#endif
+
+#if 0
+  // For non-Multigrator doVirial = 1 always
+  if ( 1 /* patch->flags.doVirial */ ) {
+    if ( simParams->fixedAtomsOn ) {
+      Tensor fixVirialNormal;
+      Tensor fixVirialNbond;
+      Tensor fixVirialSlow;
+      Vector fixForceNormal = 0;
+      Vector fixForceNbond = 0;
+      Vector fixForceSlow = 0;
+
+      calcFixVirial(fixVirialNormal, fixVirialNbond, fixVirialSlow, fixForceNormal, fixForceNbond, fixForceSlow);
+
+      ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_NORMAL,fixVirialNormal);
+      ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_NBOND,fixVirialNbond);
+      ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_SLOW,fixVirialSlow);
+      ADD_VECTOR_OBJECT(reduction,REDUCTION_EXT_FORCE_NORMAL,fixForceNormal);
+      ADD_VECTOR_OBJECT(reduction,REDUCTION_EXT_FORCE_NBOND,fixForceNbond);
+      ADD_VECTOR_OBJECT(reduction,REDUCTION_EXT_FORCE_SLOW,fixForceSlow);
+    }
+  }
+#endif
+
+  reduction->submit();
+#if 0
+  if (pressureProfileReduction) pressureProfileReduction->submit();
+#endif
+}
+
+
 //
 // end SOA code
 //
+//////////////////////////////////////////////////////////////////////////
 
-#endif // 0
+#endif // SEQUENCER_SOA
 
 
 extern int eventEndOfTimeStep;

@@ -60,6 +60,8 @@ void * operator new (size_t, void *p) { return p; }
 #define PDBVELINVFACTOR (1.0/PDBVELFACTOR)
 #define PNPERKCALMOL 69.479
 
+#define RECIP_TIMEFACTOR  (1.0 / TIMEFACTOR)
+
 //
 // Defining macro namdnearbyint(X).
 //
