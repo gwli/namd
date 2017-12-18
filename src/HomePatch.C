@@ -50,6 +50,7 @@
 #define MAXHGS 10
 #define MIN_DEBUG_LEVEL 2
 //#define DEBUGM
+#define NL_DEBUG
 #include "Debug.h"
 
 #include <vector>
@@ -1387,13 +1388,15 @@ void HomePatch::saveForce(const int ftag)
 void HomePatch::copy_atoms_to_SOA() {
   if (patchDataSOA.numAtoms != numAtoms) {
     // resize the arrays to proper length
-    patchDataSOA.gaussrand.resize(numAtoms);
     patchDataSOA.hydrogenGroupSize.resize(numAtoms);
     patchDataSOA.mass.resize(numAtoms);
     patchDataSOA.recipMass.resize(numAtoms);
     patchDataSOA.langevinParam.resize(numAtoms);
     patchDataSOA.langScalVelBBK2.resize(numAtoms);
     patchDataSOA.langScalRandBBK2.resize(numAtoms);
+    patchDataSOA.gaussrand_x.resize(numAtoms);
+    patchDataSOA.gaussrand_y.resize(numAtoms);
+    patchDataSOA.gaussrand_z.resize(numAtoms);
     patchDataSOA.vel_x.resize(numAtoms);
     patchDataSOA.vel_y.resize(numAtoms);
     patchDataSOA.vel_z.resize(numAtoms);
@@ -1457,14 +1460,14 @@ void HomePatch::calculate_derived_SOA() {
 // Copy forces from f[][] -> patchDataSOA.
 //
 void HomePatch::copy_forces_to_SOA() {
-  const ResizeArray<Force>& fnormal = f[Results::normal];
+  const Force *fnormal = f[Results::normal].const_begin();
   for (int i=0;  i < numAtoms;  i++) {
     patchDataSOA.f_normal_x[i] = fnormal[i].x;
     patchDataSOA.f_normal_y[i] = fnormal[i].y;
     patchDataSOA.f_normal_z[i] = fnormal[i].z;
   }
   if (flags.doNonbonded) {
-    const ResizeArray<Force>& fnbond = f[Results::nbond];
+    const Force *fnbond = f[Results::nbond].const_begin();
     for (int i=0;  i < numAtoms;  i++) {
       patchDataSOA.f_nbond_x[i] = fnbond[i].x;
       patchDataSOA.f_nbond_y[i] = fnbond[i].y;
@@ -1479,7 +1482,7 @@ void HomePatch::copy_forces_to_SOA() {
     }
   }
   if (flags.doFullElectrostatics) {
-    const ResizeArray<Force>& fslow = f[Results::slow];
+    const Force *fslow = f[Results::slow].const_begin();
     for (int i = 0;  i < numAtoms;  i++) {
       patchDataSOA.f_slow_x[i] = fslow[i].x;
       patchDataSOA.f_slow_y[i] = fslow[i].y;

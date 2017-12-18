@@ -105,6 +105,8 @@ public:
 //  MAKE SURE THAT THIS CLASS CAN BE BIT COPIED OR YOU WILL HAVE TO
 //  ADD SPECIAL CODE TO send_SimParameters() and receive_SimParameters()
 
+  Bool SOAintegrateOn;  // use SOA integration routine for higher performance
+
   Bool lonepairs;  // enable lone pairs
   int watmodel; // integer code for the water model in use
                 // choices are defined in common.h
@@ -540,6 +542,10 @@ public:
 	BigReal langevinTemp;		//  Temperature for Langevin dynamics
 	BigReal langevinDamping;	//  Damping coefficient (1/ps)
 	Bool langevinHydrogen;		//  Flag TRUE-> apply to hydrogens
+        Bool langevinGammasDiffer;
+        /**< Flag set internally - when all gamms are identical
+         * we can avoid extra call to satisfy rigid bond constraints.
+         */
 	Bool langevin_useBAOAB;		//  Flag TRUE-> use the experimental BAOAB integrator for NVT instead of the BBK one
 					//  See Leimkuhler and Matthews (AMRX 2012); implemented in NAMD by CM June2012
 	

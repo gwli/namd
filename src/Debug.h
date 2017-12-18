@@ -120,5 +120,41 @@ public:
 };
 #endif
 
+
+#undef D_MSG
+#undef D_STR
+#undef D_INT
+#undef D_REAL
+#undef D_REXP
+#undef D_VEC
+
+#ifdef NL_DEBUG
+
+#define D_MSG(t) \
+  fprintf(stderr, "DEBUG: %s:%d: %s\n", __FILE__, __LINE__, t)
+#define D_STR(t) \
+  fprintf(stderr, "DEBUG: %s:%d: %s=\"%s\"\n", __FILE__, __LINE__, #t, t)
+#define D_INT(n) \
+  fprintf(stderr, "DEBUG: %s:%d: %s=%d\n", __FILE__, __LINE__, #n, n)
+#define D_REAL(r) \
+  fprintf(stderr, "DEBUG: %s:%d: %s=%g\n", __FILE__, __LINE__, #r, double(r))
+#define D_REXP(r) \
+  fprintf(stderr, "DEBUG: %s:%d: %s=%e\n", __FILE__, __LINE__, #r, double(r))
+#define D_VEC(v) \
+  fprintf(stderr, "DEBUG: %s:%d: %s=%g %g %g\n", __FILE__, __LINE__, \
+      #v, double(v.x), double(v.y), double(v.z))
+
+#else
+
+#define D_MSG(t)
+#define D_STR(t)
+#define D_INT(t)
+#define D_REAL(t)
+#define D_REXP(t)
+#define D_VEC(t)
+
+#endif // NL_DEBUG
+
+
 #endif /* DEBUG_H */
 

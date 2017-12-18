@@ -628,6 +628,9 @@ void SimParameters::config_parser_basic(ParseOptions &opts) {
 #endif
    opts.optional("main", "waterModel", "Water model to use", PARSE_STRING);
    opts.optionalB("main", "LJcorrection", "Apply analytical tail corrections for energy and virial", &LJcorrection, FALSE);
+   // SOA integration routine for higher performance
+   opts.optionalB("main", "SOAintegrate", "Use SOA integration routine",
+       &SOAintegrateOn, FALSE);
 }
 
 void SimParameters::config_parser_fileio(ParseOptions &opts) {
@@ -3264,6 +3267,12 @@ void SimParameters::check_config(ParseOptions &opts, ConfigList *config, char *&
        NAMD_die("To specify Langevin dynamics parameters, use either langevinDamping and langevinHydrogen or langevinFile and langevinCol.  Do not combine them.");
      if ( opts.defined("langevinHydrogen") && langevinDamping == 0.0 )
        NAMD_die("langevinHydrogen requires langevinDamping to be set.");
+     // Assume Langevin gammas differ when parameters are read from file.
+     // Note that if Drude is on but drudeDamping is not defined,
+     // then drudeDamping will be set to langevinDamping.
+     langevinGammasDiffer = ( ! langevinHydrogen ) ||
+       opts.defined("langevinFile") ||
+       ( opts.defined("drudeDamping") && drudeDamping != langevinDamping );
    }
    
    // BEGIN LA
@@ -4321,7 +4330,54 @@ void SimParameters::check_config(ParseOptions &opts, ConfigList *config, char *&
         if (qmCSMD && (! opts.defined("QMCSMDFile") ))
             NAMD_die("QM Conditional SMD is ON, but no CSMD configuration file was profided!");
     }
-}
+
+    if (SOAintegrateOn) {
+      // Can we use SOA integration?
+
+      // We need to explicitly turn off lonepairs because it defaults TRUE.
+      if (lonepairs) {
+        iout << iWARN
+          << "Disabling lonepair support due to incompatability with SOA\n"
+          << endi;
+        lonepairs = false;
+      }
+
+      // Not compatible with the following options...
+      if (testOn || commOnly || statsOn ||
+          minimizeOn ||
+          maximumMove != 0 ||
+          accelMDOn ||
+          adaptTempOn ||
+          mollyOn ||
+          berendsenPressureOn ||
+          multigratorOn ||
+          loweAndersenOn ||
+          langevin_useBAOAB ||
+          fixedAtomsOn ||
+          GBISOn ||
+          LCPOOn ||
+          zeroMomentum || zeroMomentumAlt ||
+          tclForcesOn ||
+          colvarsOn ||
+          reassignFreq > 0 ||
+          lonepairs || drudeOn) {
+        iout << iWARN
+          << "SOA integration is incompatible with config options\n"
+          << endi;
+        iout << iWARN
+          << "Falling back to standard integration routine\n"
+          << endi;
+        SOAintegrateOn = 0;
+      }
+      else {
+        iout << iINFO
+          << "Using SOA integration routine\n"
+          << endi;
+      }
+    }
+
+} // check_config()
+
 
 void SimParameters::print_config(ParseOptions &opts, ConfigList *config, char *&cwd) {
 

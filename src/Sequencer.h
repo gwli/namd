@@ -19,6 +19,8 @@ class ControllerBroadcasts;
 class LdbCoordinator;
 class Random;
 
+#define SEQUENCER_SOA
+
 class Sequencer
 {
     friend class HomePatch;
@@ -33,6 +35,113 @@ public:
 
 protected:
     virtual void algorithm(void);	// subclasses redefine this method
+
+#ifdef SEQUENCER_SOA
+    void integrate_SOA(int); // Verlet integrator using SOA data structures
+    void rattle1_SOA(BigReal,int);
+    void addForceToMomentum_SOA(
+        const double scaling,
+        double       dt_normal,               // timestep Results::normal = 0
+        double       dt_nbond,                // timestep Results::nbond  = 1
+        double       dt_slow,                 // timestep Results::slow   = 2
+        const float  * __restrict recipMass,
+        const double * __restrict f_normal_x, // force    Results::normal = 0
+        const double * __restrict f_normal_y,
+        const double * __restrict f_normal_z,
+        const double * __restrict f_nbond_x,  // force    Results::nbond  = 1
+        const double * __restrict f_nbond_y,
+        const double * __restrict f_nbond_z,
+        const double * __restrict f_slow_x,   // force    Results::slow   = 2
+        const double * __restrict f_slow_y,
+        const double * __restrict f_slow_z,
+        double       * __restrict vel_x,
+        double       * __restrict vel_y,
+        double       * __restrict vel_z,
+        int numAtoms,
+        int maxForceNumber
+    );
+    void addVelocityToPosition_SOA(
+        const double dt,  ///< scaled timestep
+        const double * __restrict vel_x,
+        const double * __restrict vel_y,
+        const double * __restrict vel_z,
+        double *       __restrict pos_x,
+        double *       __restrict pos_y,
+        double *       __restrict pos_z,
+        int numAtoms      ///< number of atoms
+    );
+    void submitHalfstep_SOA(
+        const int    * __restrict hydrogenGroupSize,
+        const float  * __restrict mass,
+        const double * __restrict vel_x,
+        const double * __restrict vel_y,
+        const double * __restrict vel_z,
+        int numAtoms
+    );
+    void submitReductions_SOA(
+        const int    * __restrict hydrogenGroupSize,
+        const float  * __restrict mass,
+        const double * __restrict pos_x,
+        const double * __restrict pos_y,
+        const double * __restrict pos_z,
+        const double * __restrict vel_x,
+        const double * __restrict vel_y,
+        const double * __restrict vel_z,
+        const double * __restrict f_normal_x,
+        const double * __restrict f_normal_y,
+        const double * __restrict f_normal_z,
+        const double * __restrict f_nbond_x,
+        const double * __restrict f_nbond_y,
+        const double * __restrict f_nbond_z,
+        const double * __restrict f_slow_x,
+        const double * __restrict f_slow_y,
+        const double * __restrict f_slow_z,
+        int numAtoms
+    );
+    void submitCollections_SOA(int step, int zeroVel = 0);
+    void maximumMove_SOA(
+        const double dt,  ///< scaled timestep
+        const double maxvel2, ///< square of bound on velocity
+        const double * __restrict vel_x,
+        const double * __restrict vel_y,
+        const double * __restrict vel_z,
+        int numAtoms      ///< number of atoms
+    );
+    void langevinVelocitiesBBK1_SOA(
+        BigReal timestep,
+        const float * __restrict langevinParam,
+        double      * __restrict vel_x,
+        double      * __restrict vel_y,
+        double      * __restrict vel_z,
+        int numAtoms
+    );
+    void langevinVelocitiesBBK2_SOA(
+        BigReal timestep,
+        const float * __restrict langevinParam,
+        const float * __restrict langScalVelBBK2,
+        const float * __restrict langScalRandBBK2,
+        float       * __restrict gaussrand_x,
+        float       * __restrict gaussrand_y,
+        float       * __restrict gaussrand_z,
+        double      * __restrict vel_x,
+        double      * __restrict vel_y,
+        double      * __restrict vel_z,
+        int numAtoms
+    );
+    void langevinPiston_SOA(
+        const int    * __restrict hydrogenGroupSize,
+        const float  * __restrict mass,
+        double       * __restrict pos_x,
+        double       * __restrict pos_y,
+        double       * __restrict pos_z,
+        double       * __restrict vel_x,
+        double       * __restrict vel_y,
+        double       * __restrict vel_z,
+        int numAtoms,
+        int step
+    );
+    void runComputeObjects_SOA(int migration, int pairlists);
+#endif
 
     void integrate(int); // Verlet integrator
     void minimize(); // CG minimizer

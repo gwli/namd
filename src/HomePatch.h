@@ -55,14 +55,17 @@ class ComputeQMMgr;
 //
 struct PatchDataSOA {
 
-  ResizeArray<float> gaussrand; // fill with Gaussian random numbers
-
   ResizeArray<int>   hydrogenGroupSize;
   ResizeArray<float> mass;
   ResizeArray<float> recipMass; // derived from mass
+
   ResizeArray<float> langevinParam;
   ResizeArray<float> langScalVelBBK2;  // derived from langevinParam
   ResizeArray<float> langScalRandBBK2; // from langevinParam and recipMass
+
+  ResizeArray<float> gaussrand_x; // fill with Gaussian random numbers
+  ResizeArray<float> gaussrand_y;
+  ResizeArray<float> gaussrand_z;
 
   ResizeArray<double> vel_x;  // Jim recommends double precision velocity
   ResizeArray<double> vel_y;
