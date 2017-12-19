@@ -99,7 +99,7 @@ void NAMD_err(const char *err_msg)
 
 {
    if ( ! err_msg ) err_msg = "(unknown error)";
-   char *sys_err_msg = strerror(errno);
+   const char *sys_err_msg = strerror(errno);
    if ( ! sys_err_msg ) sys_err_msg = "(unknown error)";
    char *new_err_msg = new char[strlen(err_msg) + 40 + strlen(sys_err_msg)];
    sprintf(new_err_msg,"FATAL ERROR: %s: %s\n",err_msg, sys_err_msg);
@@ -137,7 +137,7 @@ int NAMD_file_exists(const char *filename) {
     rval = access(filename, F_OK);
   } while ( rval != 0 && errno == EINTR );
   if ( rval != 0 && errno != ENOENT ) {
-    char *sys_err_msg = strerror(errno);
+    const char *sys_err_msg = strerror(errno);
     if ( ! sys_err_msg ) sys_err_msg = "(unknown error)";
     iout << iERROR << "Error on checking file "
       << filename << ": " << sys_err_msg << "\n" << endi;
@@ -166,7 +166,7 @@ void NAMD_backup_file(const char *filename, const char *extension)
     while ( rename(filename,backup) )
     {
       if ( errno == EINTR ) continue;
-      char *sys_err_msg = strerror(errno);
+      const char *sys_err_msg = strerror(errno);
       if ( ! sys_err_msg ) sys_err_msg = "(unknown error)";
       iout << iERROR << "Error on renaming file " << filename
 	<< " to " << backup << ": " << sys_err_msg << "\n" << endi;

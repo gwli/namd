@@ -1223,7 +1223,7 @@ int Ambertoppar::read_fortran_12I6(FILE *fp, int *data, int count)
 // Used for AMBER 7 format. The function moves the file postion to
 // the beginning of the data section labeled by "label"
 
-int Ambertoppar::moveto(FILE *fp, char *label)
+int Ambertoppar::moveto(FILE *fp, const char *label)
 {
   char s[76],buf[81];
 
