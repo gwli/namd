@@ -3273,6 +3273,14 @@ void SimParameters::check_config(ParseOptions &opts, ConfigList *config, char *&
      langevinGammasDiffer = ( ! langevinHydrogen ) ||
        opts.defined("langevinFile") ||
        ( opts.defined("drudeDamping") && drudeDamping != langevinDamping );
+     if (langevinGammasDiffer) {
+       iout
+         << iWARN
+         << "The Langevin gamma parameters differ over the particles,\n"
+         << iWARN
+         << "requiring extra work per step to constrain rigid bonds.\n"
+         << endi;
+     }
    }
    
    // BEGIN LA
@@ -4337,7 +4345,7 @@ void SimParameters::check_config(ParseOptions &opts, ConfigList *config, char *&
       // We need to explicitly turn off lonepairs because it defaults TRUE.
       if (lonepairs) {
         iout << iWARN
-          << "Disabling lonepair support due to incompatability with SOA\n"
+          << "Disabling lonepair support due to incompatability with SOA.\n"
           << endi;
         lonepairs = false;
       }

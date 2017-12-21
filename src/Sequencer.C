@@ -1325,15 +1325,17 @@ void Sequencer::maximumMove_SOA(
     const BigReal maxvel = simParams->cutoff / dt;
     const BigReal maxvel2 = maxvel * maxvel;
 #endif
+    // Loop vectorizes when replacing logical OR with summing.
     int killme = 0;
     for (int i=0;  i < numAtoms;  i++) {
       BigReal vel2 = 
         vel_x[i] * vel_x[i] + vel_y[i] * vel_y[i] + vel_z[i] * vel_z[i];
-      killme = killme || ( vel2 > maxvel2 );
+      killme = killme + ( vel2 > maxvel2 );
     }
     if (killme) {
       // Found at least one atom that is moving too fast.
       // Terminating, so loop performance below doesn't matter.
+      // Loop does not vectorize.
       killme = 0;
       for (int i=0;  i < numAtoms;  i++) {
         BigReal vel2 =
@@ -1586,6 +1588,8 @@ void Sequencer::langevinVelocitiesBBK2_SOA(
       //
       // XXX can refine code below, count in advance how many
       // random numbers we need to use Random array filling routine
+      //
+      // XXX Loop does not vectorize!
       for (int i=0;  i < numAtoms;  i++) {
         Vector rg;  // = 0
         if (langevinParam[i] != 0)  rg = random->gaussian_vector();
@@ -1770,17 +1774,18 @@ void Sequencer::langevinPiston_SOA(
 }
 
 
-void Sequencer::rattle1_SOA(BigReal dt, int pressure)
+// timestep scaled by 1/TIMEFACTOR
+void Sequencer::rattle1_SOA(BigReal timestep, int pressure)
 {
   RANGE("rattle1_SOA", 9);
-  dt *= TIMEFACTOR;  // convert to fs
+  //dt *= TIMEFACTOR;  // convert to fs
   if ( simParams->rigidBonds != RIGID_NONE ) {
     // XXX The constraint code is pretty involved.
     // For now, copy back to AOS form.
-    patch->copy_updates_to_AOS();
+    //patch->copy_updates_to_AOS();
     Tensor virial;
     Tensor *vp = ( pressure ? &virial : 0 );
-    if ( patch->rattle1(dt, vp, pressureProfileReduction) ) {
+    if ( patch->rattle1_SOA(timestep, vp, pressureProfileReduction) ) {
       iout << iERROR << 
         "Constraint failure; simulation has become unstable.\n" << endi;
       Node::Object()->enableEarlyExit();
@@ -1789,8 +1794,8 @@ void Sequencer::rattle1_SOA(BigReal dt, int pressure)
     ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_NORMAL,virial);
     // XXX The constraint code is pretty involved.
     // Copy AOS updates back into SOA form.
-    patch->copy_atoms_to_SOA();
-    if (pressure) patch->copy_forces_to_SOA();
+    //patch->copy_atoms_to_SOA();
+    //if (pressure) patch->copy_forces_to_SOA();
   }
 }
 

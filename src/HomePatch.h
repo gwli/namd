@@ -58,6 +58,7 @@ struct PatchDataSOA {
   ResizeArray<int>   hydrogenGroupSize;
   ResizeArray<float> mass;
   ResizeArray<float> recipMass; // derived from mass
+  ResizeArray<float> rigidBondLength;
 
   ResizeArray<float> langevinParam;
   ResizeArray<float> langScalVelBBK2;  // derived from langevinParam
@@ -218,6 +219,11 @@ public:
   int rattle1(const BigReal, Tensor *virial, SubmitReduction *);
   void rattle2(const BigReal, Tensor *virial);
   void minimize_rattle2(const BigReal, Tensor *virial, bool forces=false);
+
+  // SOA rattle
+  void buildRattleList_SOA();
+  void addRattleForce_SOA(const BigReal invdt, Tensor& wc);
+  int rattle1_SOA(const BigReal, Tensor *virial, SubmitReduction *);
 
   // methods for mollified impluse (MOLLY)
   void mollyAverage();

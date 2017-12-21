@@ -1391,6 +1391,7 @@ void HomePatch::copy_atoms_to_SOA() {
     patchDataSOA.hydrogenGroupSize.resize(numAtoms);
     patchDataSOA.mass.resize(numAtoms);
     patchDataSOA.recipMass.resize(numAtoms);
+    patchDataSOA.rigidBondLength.resize(numAtoms);
     patchDataSOA.langevinParam.resize(numAtoms);
     patchDataSOA.langScalVelBBK2.resize(numAtoms);
     patchDataSOA.langScalRandBBK2.resize(numAtoms);
@@ -1419,6 +1420,7 @@ void HomePatch::copy_atoms_to_SOA() {
   for (int i=0;  i < numAtoms;  i++) {
     patchDataSOA.hydrogenGroupSize[i] = atom[i].hydrogenGroupSize;
     patchDataSOA.mass[i] = atom[i].mass;
+    patchDataSOA.rigidBondLength[i] = atom[i].rigidBondLength;
     patchDataSOA.langevinParam[i] = atom[i].langevinParam;
     patchDataSOA.vel_x[i] = atom[i].velocity.x;
     patchDataSOA.vel_y[i] = atom[i].velocity.y;
@@ -3119,6 +3121,450 @@ void HomePatch::minimize_rattle2(const BigReal timestep, Tensor *virial, bool fo
   *virial += wc / ( 0.5 * dt );
 
 }
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+// begin SOA rattle
+//
+
+void HomePatch::buildRattleList_SOA() {
+  // Called when rattleListValid is false.
+  // List will stay valid until atom migration or some other event, 
+  // such as exchanging replicas, SCRIPT_REVERT from Tcl, reinit atoms.
+
+  const double * __restrict pos_x = patchDataSOA.pos_x.const_begin();
+  const double * __restrict pos_y = patchDataSOA.pos_y.const_begin();
+  const double * __restrict pos_z = patchDataSOA.pos_z.const_begin();
+  const float  * __restrict mass = patchDataSOA.mass.const_begin();
+  const float  * __restrict recipMass = patchDataSOA.recipMass.const_begin();
+  const float  * __restrict rigidBondLength =
+    patchDataSOA.rigidBondLength.const_begin();
+  const int    * __restrict hydrogenGroupSize =
+    patchDataSOA.hydrogenGroupSize.const_begin();
+
+  SimParameters *simParams = Node::Object()->simParameters;
+  const int fixedAtomsOn = simParams->fixedAtomsOn;
+  const int useSettle = simParams->useSettle;
+
+  // Re-size to contain numAtoms elements
+  velNew.resize(numAtoms);
+  posNew.resize(numAtoms);
+
+  // Size of a hydrogen group for water
+  int wathgsize = 3;
+  int watmodel = simParams->watmodel;
+  if (watmodel == WAT_TIP4) wathgsize = 4;
+  else if (watmodel == WAT_SWM4) wathgsize = 5;
+
+  // Initialize the settle algorithm with water parameters
+  // settle1() assumes all waters are identical,
+  // and will generate bad results if they are not.
+  // XXX this will move to Molecule::build_atom_status when that 
+  // version is debugged
+  if ( ! settle_initialized ) {
+    for ( int ig = 0; ig < numAtoms; ig += hydrogenGroupSize[ig] ) {
+      // find a water
+      if (rigidBondLength[ig] > 0) {
+        int oatm;
+        if (simParams->watmodel == WAT_SWM4) {
+          oatm = ig+3;  // skip over Drude and Lonepair
+          //printf("ig=%d  mass_ig=%g  oatm=%d  mass_oatm=%g\n",
+          //    ig, atom[ig].mass, oatm, atom[oatm].mass);
+        }
+        else {
+          oatm = ig+1;
+          // Avoid using the Om site to set this by mistake
+          if (mass[ig] < 0.5 || mass[ig+1] < 0.5) {
+            oatm += 1;
+          }
+        }
+
+        // initialize settle water parameters
+        settle1init(mass[ig], mass[oatm], 
+                    rigidBondLength[ig],
+                    rigidBondLength[oatm],
+                    settle_mOrmT, settle_mHrmT, settle_ra,
+                    settle_rb, settle_rc, settle_rra);
+        settle_initialized = 1;
+        break; // done with init
+      }
+    }
+  }
+  
+  Vector ref[10];
+  BigReal rmass[10];
+  BigReal dsq[10];
+  int fixed[10];
+  int ial[10];
+  int ibl[10];
+
+  int numSettle = 0;
+  int numRattle = 0;
+  int posRattleParam = 0;
+
+  settleList.clear();
+  rattleList.clear();
+  noconstList.clear();
+  rattleParam.clear();
+
+  for ( int ig = 0; ig < numAtoms; ig += hydrogenGroupSize[ig] ) {
+    int hgs = hydrogenGroupSize[ig];
+    if ( hgs == 1 ) {
+      // only one atom in group
+      noconstList.push_back(ig);
+      continue;
+    }
+    int anyfixed = 0;
+    for (int i = 0; i < hgs; ++i ) {
+      ref[i].x = pos_x[ig+i];
+      ref[i].y = pos_y[ig+i];
+      ref[i].z = pos_z[ig+i];
+      rmass[i] = recipMass[ig+i];
+      fixed[i] = ( fixedAtomsOn && atom[ig+i].atomFixed ); // XXX
+      if ( fixed[i] ) {
+        anyfixed = 1;
+        rmass[i] = 0.;
+      }
+    }
+    int icnt = 0;
+    BigReal tmp = rigidBondLength[ig];
+    if (tmp > 0.0) {  // for water
+      if (hgs != wathgsize) {
+        char errmsg[256];
+        sprintf(errmsg,
+            "Water molecule starting with atom %d contains %d atoms "
+            "but the specified water model requires %d atoms.\n",
+            atom[ig].id+1, hgs, wathgsize
+            );
+        NAMD_die(errmsg);
+      }
+      // Use SETTLE for water unless some of the water atoms are fixed,
+      if (useSettle && !anyfixed) {
+        // Store to Settle -list
+        settleList.push_back(ig);
+        continue;
+      }
+      if ( !(fixed[1] && fixed[2]) ) {
+        dsq[icnt] = tmp * tmp;
+        ial[icnt] = 1;
+        ibl[icnt] = 2;
+        ++icnt;
+      }
+    } // if (tmp > 0.0)
+    for (int i = 1; i < hgs; ++i ) {  // normal bonds to mother atom
+      if ( ( tmp = rigidBondLength[ig+i] ) > 0 ) {
+        if ( !(fixed[0] && fixed[i]) ) {
+          dsq[icnt] = tmp * tmp;
+          ial[icnt] = 0;
+          ibl[icnt] = i;
+          ++icnt;
+        }
+      }
+    }
+    if ( icnt == 0 ) {
+      // no constraints
+      noconstList.push_back(ig);
+      continue;  
+    }
+    // Store to Rattle -list
+    RattleList rattleListElem;
+    rattleListElem.ig  = ig;
+    rattleListElem.icnt = icnt;
+    rattleList.push_back(rattleListElem);
+    for (int i = 0; i < icnt; ++i ) {
+      int a = ial[i];
+      int b = ibl[i];
+      RattleParam rattleParamElem;
+      rattleParamElem.ia = a;
+      rattleParamElem.ib = b;
+      rattleParamElem.dsq = dsq[i];
+      rattleParamElem.rma = rmass[a];
+      rattleParamElem.rmb = rmass[b];
+      rattleParam.push_back(rattleParamElem);
+    }
+  }
+
+}
+
+void HomePatch::addRattleForce_SOA(const BigReal invdt, Tensor& wc) {
+  const float  * __restrict mass = patchDataSOA.mass.const_begin();
+  const double * __restrict pos_x = patchDataSOA.pos_x.const_begin();
+  const double * __restrict pos_y = patchDataSOA.pos_y.const_begin();
+  const double * __restrict pos_z = patchDataSOA.pos_z.const_begin();
+  double * __restrict vel_x = patchDataSOA.vel_x.begin();
+  double * __restrict vel_y = patchDataSOA.vel_y.begin();
+  double * __restrict vel_z = patchDataSOA.vel_z.begin();
+  double * __restrict f_normal_x = patchDataSOA.f_normal_x.begin();
+  double * __restrict f_normal_y = patchDataSOA.f_normal_y.begin();
+  double * __restrict f_normal_z = patchDataSOA.f_normal_z.begin();
+
+  for (int ig = 0; ig < numAtoms; ++ig ) {
+    BigReal df_x = (velNew[ig].x - vel_x[ig]) * ( mass[ig] * invdt );
+    BigReal df_y = (velNew[ig].y - vel_y[ig]) * ( mass[ig] * invdt );
+    BigReal df_z = (velNew[ig].z - vel_z[ig]) * ( mass[ig] * invdt );
+    //Force df = (velNew[ig] - atom[ig].velocity) * ( atom[ig].mass * invdt );
+    Tensor vir;
+    vir.xx = df_x * pos_x[ig];
+    vir.xy = df_x * pos_y[ig];
+    vir.xz = df_x * pos_z[ig];
+    vir.yx = df_y * pos_x[ig];
+    vir.yy = df_y * pos_y[ig];
+    vir.yz = df_y * pos_z[ig];
+    vir.zx = df_z * pos_x[ig];
+    vir.zy = df_z * pos_y[ig];
+    vir.zz = df_z * pos_z[ig];
+    //Tensor vir = outer(df, atom[ig].position);
+    wc += vir;
+    f_normal_x[ig] += df_x;
+    f_normal_y[ig] += df_x;
+    f_normal_z[ig] += df_x;
+    //f[Results::normal][ig] += df;
+    vel_x[ig] = velNew[ig].x;
+    vel_y[ig] = velNew[ig].y;
+    vel_z[ig] = velNew[ig].z;
+    //atom[ig].velocity = velNew[ig];
+  }
+}
+
+// dt scaled by 1/TIMEFACTOR
+int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial, 
+  SubmitReduction *ppreduction) {
+
+  SimParameters *simParams = Node::Object()->simParameters;
+  if (simParams->watmodel != WAT_TIP3 || ppreduction) {
+    // Call old rattle1 -method instead
+    copy_updates_to_AOS();
+    int rc = rattle1old(dt * TIMEFACTOR, virial, ppreduction);
+    copy_atoms_to_SOA();
+    return rc;
+  }
+
+  if (!rattleListValid) {
+    buildRattleList_SOA();
+    rattleListValid = true;
+  }
+
+  double * __restrict pos_x = patchDataSOA.pos_x.begin();
+  double * __restrict pos_y = patchDataSOA.pos_y.begin();
+  double * __restrict pos_z = patchDataSOA.pos_z.begin();
+  double * __restrict vel_x = patchDataSOA.vel_x.begin();
+  double * __restrict vel_y = patchDataSOA.vel_y.begin();
+  double * __restrict vel_z = patchDataSOA.vel_z.begin();
+  const int * __restrict hydrogenGroupSize = patchDataSOA.hydrogenGroupSize.const_begin();
+
+  const int fixedAtomsOn = simParams->fixedAtomsOn;
+  const int useSettle = simParams->useSettle;
+  //const BigReal dt = timestep / TIMEFACTOR;
+  const BigReal invdt = (dt == 0.) ? 0. : 1.0 / dt; // precalc 1/dt
+  const BigReal tol2 = 2.0 * simParams->rigidTol;
+  int maxiter = simParams->rigidIter;
+  int dieOnError = simParams->rigidDie;
+
+  Vector ref[10];  // reference position
+  Vector pos[10];  // new position
+  Vector vel[10];  // new velocity
+
+  // Manual un-roll
+  int n = (settleList.size()/2)*2;
+  for (int j=0;j < n;j+=2) {
+    int ig;
+    ig = settleList[j];
+    for (int i = 0; i < 3; ++i ) {
+      ref[i].x = pos_x[ig+i];
+      ref[i].y = pos_y[ig+i];
+      ref[i].z = pos_z[ig+i];
+      //ref[i] = atom[ig+i].position;
+      pos[i].x = pos_x[ig+i] + vel_x[ig+i] * dt;
+      pos[i].y = pos_y[ig+i] + vel_y[ig+i] * dt;
+      pos[i].z = pos_z[ig+i] + vel_z[ig+i] * dt;
+      //pos[i] = atom[ig+i].position + atom[ig+i].velocity * dt;
+    }
+    ig = settleList[j+1];
+    for (int i = 0; i < 3; ++i ) {
+      ref[i+3].x = pos_x[ig+i];
+      ref[i+3].y = pos_y[ig+i];
+      ref[i+3].z = pos_z[ig+i];
+      //ref[i+3] = atom[ig+i].position;
+      pos[i+3].x = pos_x[ig+i] + vel_x[ig+i] * dt;
+      pos[i+3].y = pos_y[ig+i] + vel_y[ig+i] * dt;
+      pos[i+3].z = pos_z[ig+i] + vel_z[ig+i] * dt;
+      //pos[i+3] = atom[ig+i].position + atom[ig+i].velocity * dt;
+    }
+    settle1_SIMD<2>(ref, pos,
+      settle_mOrmT, settle_mHrmT, settle_ra,
+      settle_rb, settle_rc, settle_rra);
+
+    ig = settleList[j];
+    for (int i = 0; i < 3; ++i ) {
+      velNew[ig+i] = (pos[i] - ref[i])*invdt;
+      posNew[ig+i] = pos[i];
+    }
+    ig = settleList[j+1];
+    for (int i = 0; i < 3; ++i ) {
+      velNew[ig+i] = (pos[i+3] - ref[i+3])*invdt;
+      posNew[ig+i] = pos[i+3];
+    }
+
+  }
+
+  if (settleList.size() & 1 /* % 2 */) {
+    int ig = settleList[settleList.size()-1];
+    for (int i = 0; i < 3; ++i ) {
+      ref[i].x = pos_x[ig+i];
+      ref[i].y = pos_y[ig+i];
+      ref[i].z = pos_z[ig+i];
+      //ref[i] = atom[ig+i].position;
+      pos[i].x = pos_x[ig+i] + vel_x[ig+i] * dt;
+      pos[i].y = pos_y[ig+i] + vel_y[ig+i] * dt;
+      pos[i].z = pos_z[ig+i] + vel_z[ig+i] * dt;
+      //pos[i] = atom[ig+i].position + atom[ig+i].velocity * dt;
+    }
+    settle1_SIMD<1>(ref, pos,
+            settle_mOrmT, settle_mHrmT, settle_ra,
+            settle_rb, settle_rc, settle_rra);        
+    for (int i = 0; i < 3; ++i ) {
+      velNew[ig+i] = (pos[i] - ref[i])*invdt;
+      posNew[ig+i] = pos[i];
+    }
+  }
+
+  int posParam = 0;
+  for (int j=0;j < rattleList.size();++j) {
+
+    BigReal refx[10];
+    BigReal refy[10];
+    BigReal refz[10];
+
+    BigReal posx[10];
+    BigReal posy[10];
+    BigReal posz[10];
+
+    int ig = rattleList[j].ig;
+    int icnt = rattleList[j].icnt;
+    int hgs = atom[ig].hydrogenGroupSize;
+    for (int i = 0; i < hgs; ++i ) {
+      ref[i].x = pos_x[ig+i];
+      ref[i].y = pos_y[ig+i];
+      ref[i].z = pos_z[ig+i];
+      //ref[i] = atom[ig+i].position;
+      pos[i].x = pos_x[ig+i];
+      pos[i].y = pos_y[ig+i];
+      pos[i].z = pos_z[ig+i];
+      //pos[i] = atom[ig+i].position;
+      // XXX find something better than conditional and hitting atomFixed?
+      if (!(fixedAtomsOn && atom[ig+i].atomFixed)) {
+        pos[i].x += vel_x[ig+i] * dt;
+        pos[i].y += vel_y[ig+i] * dt;
+        pos[i].z += vel_z[ig+i] * dt;
+        //pos[i] += atom[ig+i].velocity * dt;
+      }
+      refx[i] = ref[i].x;
+      refy[i] = ref[i].y;
+      refz[i] = ref[i].z;
+      posx[i] = pos[i].x;
+      posy[i] = pos[i].y;
+      posz[i] = pos[i].z;
+    }
+
+
+    bool done;
+    bool consFailure;
+    if (icnt == 1) {
+      rattlePair<1>(&rattleParam[posParam],
+        refx, refy, refz,
+        posx, posy, posz);
+      done = true;
+      consFailure = false;
+    } else {
+      rattleN(icnt, &rattleParam[posParam],
+        refx, refy, refz,
+        posx, posy, posz,
+        tol2, maxiter,
+        done, consFailure);
+    }
+
+    // Advance position in rattleParam
+    posParam += icnt;
+
+    for (int i = 0; i < hgs; ++i ) {
+      pos[i].x = posx[i];
+      pos[i].y = posy[i];
+      pos[i].z = posz[i];
+    }
+
+    for (int i = 0; i < hgs; ++i ) {
+      velNew[ig+i] = (pos[i] - ref[i])*invdt;
+      posNew[ig+i] = pos[i];
+    }
+
+    if ( consFailure ) {
+      if ( dieOnError ) {
+        iout << iERROR << "Constraint failure in RATTLE algorithm for atom "
+        << (atom[ig].id + 1) << "!\n" << endi;
+        return -1;  // triggers early exit
+      } else {
+        iout << iWARN << "Constraint failure in RATTLE algorithm for atom "
+        << (atom[ig].id + 1) << "!\n" << endi;
+      }
+    } else if ( ! done ) {
+      if ( dieOnError ) {
+        iout << iERROR << "Exceeded RATTLE iteration limit for atom "
+        << (atom[ig].id + 1) << "!\n" << endi;
+        return -1;  // triggers early exit
+      } else {
+        iout << iWARN << "Exceeded RATTLE iteration limit for atom "
+        << (atom[ig].id + 1) << "!\n" << endi;
+      }
+    }
+
+  }
+
+  // Finally, we have to go through atoms that are not involved in rattle just so that we have
+  // their positions and velocities up-to-date in posNew and velNew
+  for (int j=0;j < noconstList.size();++j) {
+    int ig = noconstList[j];
+    int hgs = hydrogenGroupSize[ig];
+    //int hgs = atom[ig].hydrogenGroupSize;
+    for (int i = 0; i < hgs; ++i ) {
+      velNew[ig+i].x = vel_x[ig+i];
+      velNew[ig+i].y = vel_y[ig+i];
+      velNew[ig+i].z = vel_z[ig+i];
+      //velNew[ig+i] = atom[ig+i].velocity;
+      posNew[ig+i].x = pos_x[ig+i];
+      posNew[ig+i].y = pos_y[ig+i];
+      posNew[ig+i].z = pos_z[ig+i];
+      //posNew[ig+i] = atom[ig+i].position;
+    }
+  }
+
+  if ( invdt == 0 ) {
+    for (int ig = 0; ig < numAtoms; ++ig ) {
+      pos_x[ig] = posNew[ig].x;
+      pos_y[ig] = posNew[ig].y;
+      pos_z[ig] = posNew[ig].z;
+      //atom[ig].position = posNew[ig];
+    }
+  } else if ( virial == 0 ) {
+    for (int ig = 0; ig < numAtoms; ++ig ) {
+      vel_x[ig] = velNew[ig].x;
+      vel_y[ig] = velNew[ig].y;
+      vel_z[ig] = velNew[ig].z;
+      //atom[ig].velocity = velNew[ig];
+    }
+  } else {
+    Tensor wc;  // constraint virial
+    addRattleForce_SOA(invdt, wc);
+    *virial += wc;
+  }
+
+  return 0;
+}
+
+//
+// end SOA rattle
+//
+//////////////////////////////////////////////////////////////////////////
 
 
 // BEGIN LA
