@@ -92,6 +92,10 @@ class MIStream {
     MIStream *get(Vector *data) {
       return Get((char *)data, sizeof(Vector));
     }
+    template <class T>
+    MIStream *get(size_t len, T *data) {
+      return Get((char *)data, len*sizeof(T));
+    }
 };
 
 class MOStream {
@@ -175,6 +179,10 @@ class MOStream {
       size_t length = strlen(data);
       put((int)length);
       return put(length, data);
+    }
+    template <class T>
+    MOStream *put(size_t len, T *data) { 
+      return Put((char *)data,len*sizeof(T)); 
     }
 };
 

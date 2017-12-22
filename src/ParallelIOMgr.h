@@ -43,9 +43,9 @@ public:
     int numCalcImpropers;
     int numCrossterms;
     int numCalcCrossterms;
-    int numExclusions;
-    int numCalcExclusions;
-    int numCalcFullExclusions;
+    int64 numExclusions;
+    int64 numCalcExclusions;
+    int64 numCalcFullExclusions;
     int numLJPairs;
     int numCalcLJPairs;
     

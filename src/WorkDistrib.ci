@@ -16,16 +16,12 @@ module WorkDistrib {
   message PatchMapMsg {
     char patchMapData[];
   };
-  message ComputeMapMsg {
-    ComputeMap::ComputeData computeMapData[];
-  };
 
   group WorkDistrib
   {
     entry WorkDistrib(void);
     entry void peOrderingReady();
     entry void savePatchMap(PatchMapMsg *);
-    entry void saveComputeMap(ComputeMapMsg *);
     entry void recvComputeMapChanges(ComputeMapChangeMsg *);
     entry void doneSaveComputeMap(CkReductionMsg *);
     entry void enqueueWork(LocalWorkMsg *);

@@ -10,6 +10,7 @@
 #include "InfoStream.h"
 #include "ComputeMap.h"
 #include "Compute.h"
+#include "MStream.h"
 
 #include "charm++.h"
 
@@ -59,23 +60,23 @@ ComputeMap::checkMap(void)
   DebugM(4, "Compute Count = " << computeCount << "\n");
 }
 
-void ComputeMap::pack (ComputeData *buffer)
+void ComputeMap::pack (MOStream *msg)
 {
   DebugM(4,"Packing ComputeMap\n");
-  memcpy(buffer, computeData.begin(), nComputes * sizeof(ComputeData));
+  msg->put(nComputes);
+  msg->put(nComputes,computeData.begin());
 }
 
-void ComputeMap::unpack (int n, ComputeData *ptr)
+void ComputeMap::unpack (MIStream *msg)
 {
   DebugM(4,"Unpacking ComputeMap\n");
-
-  if ( nComputes && n != nComputes ) {
+  int old = nComputes;
+  msg->get(nComputes);
+  if ( old && old != nComputes ) {
     NAMD_bug("number of computes in new ComputeMap has changed!\n");
   }
-
-  nComputes = n;
   computeData.resize(nComputes);
-  memcpy(computeData.begin(), ptr, nComputes * sizeof(ComputeData));
+  msg->get(nComputes,computeData.begin());
 }
 
 void ComputeMap::initPtrs() {
@@ -225,11 +226,10 @@ void ComputeMap::printComputeMap(void)
 
   }
 
-char *fname;
 #ifdef MEM_OPT_VERSION
-fname = "computeMap.opt";
+const char *fname = "computeMap.opt";
 #else
-fname = "computeMap.orig";
+const char *fname = "computeMap.orig";
 #endif
 
   FILE *ofp = fopen(fname, "w");

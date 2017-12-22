@@ -555,7 +555,7 @@ public:
   int numDonors;          //  Number of hydrogen bond donors
   int numAcceptors; //  Number of hydrogen bond acceptors
   int numExclusions;  //  Number of exclusions
-  int numTotalExclusions; //  Real Total Number of Exclusions // hack
+  int64 numTotalExclusions; //  Real Total Number of Exclusions // hack
 
   // DRUDE
   int numLonepairs; // Number of lone pairs
@@ -603,8 +603,8 @@ public:
   int numCalcDihedrals; //  Number of dihedrals requiring calculation
   int numCalcImpropers; //  Number of impropers requiring calculation
   int numCalcCrossterms; //  Number of cross-terms requiring calculation
-  int numCalcExclusions;  //  Number of exclusions requiring calculation
-  int numCalcFullExclusions;  //  Number of full exclusions requiring calculation
+  int64 numCalcExclusions;  //  Number of exclusions requiring calculation
+  int64 numCalcFullExclusions;  //  Number of full exclusions requiring calculation
 
   // DRUDE
   int numCalcTholes;  // Number of Thole correction terms requiring calculation
@@ -1420,8 +1420,8 @@ public:
   //[fromAtomID, toAtomID].
   void read_binary_atom_info(int fromAtomID, int toAtomID, InputAtomList &inAtoms);
 
-  int getNumCalcExclusions(){return numCalcExclusions;}
-  void setNumCalcExclusions(int x){numCalcExclusions= x;}
+  int64 getNumCalcExclusions(){return numCalcExclusions;}
+  void setNumCalcExclusions(int64 x){numCalcExclusions= x;}
 
   Index getEachAtomMass(int i){return eachAtomMass[i];}
   Index getEachAtomCharge(int i){return eachAtomCharge[i];}

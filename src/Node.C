@@ -731,24 +731,29 @@ void Node::startup() {
         }
       }
     }
+    break;
+
+  case 8:
 #ifdef NAMD_CUDA
     if ( (simParameters->useCUDA2 || simParameters->bondedCUDA) && CkMyRank()==0 ) {
       CProxy_ComputeCUDAMgr nb(CkpvAccess(BOCclass_group).computeCUDAMgr);
       nb[CkMyNode()].initialize(new CkQdMsg);
     }
 #endif
+    break;
 
-    if (!CkMyPe()) {
-      workDistrib->sendComputeMap();
-    }
+  case 9:
+    workDistrib->sendComputeMap();
+    break;
 
+  case 10:
     #ifdef MEM_OPT_VERSION
     //migrate atoms to HomePatch processors
     ioMgr->sendAtomsToHomePatchProcs();
     #endif
     break;
     
-  case 8:
+  case 11:
     // part 2 of MSM init
     if ( simParameters->MSMOn && ! simParameters->MsmSerialOn ) {
       CProxy_ComputeMsmMgr msm(CkpvAccess(BOCclass_group).computeMsmMgr);
@@ -804,7 +809,7 @@ void Node::startup() {
     #endif
   break;
 
-  case 9:
+  case 12:
     if ( simParameters->PMEOn ) {
       if ( simParameters->useOptPME ) {
 	CProxy_OptPmeMgr pme(CkpvAccess(BOCclass_group).computePmeMgr);
@@ -866,7 +871,7 @@ void Node::startup() {
 
   break;
 
-  case 10:
+  case 13:
 
     // DMK - DEBUG - If, in MIC runs, the debug option to dump all the compute maps to files
     //   for debugging/verification purposes has been enabled, have each PE do so now.
@@ -886,7 +891,7 @@ void Node::startup() {
     LdbCoordinator::Object()->initialize(PatchMap::Object(),ComputeMap::Object());
   break;
 
-  case 11:
+  case 14:
     // computes may create proxies on the fly so put these in separate phase
     Sync::Object()->openSync();  // decide if to open local Sync 
     if (proxySendSpanning || proxyRecvSpanning ) proxyMgr->buildProxySpanningTree();
@@ -900,7 +905,7 @@ void Node::startup() {
 
   break;
 
-  case 12:
+  case 15:
     {
 	//For debugging
 	/*if(!CkMyPe()){

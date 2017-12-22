@@ -1075,74 +1075,29 @@ void WorkDistrib::savePatchMap(PatchMapMsg *msg)
 }
 
 
-class ComputeMapMsg : public CMessage_ComputeMapMsg {
-  public:
-    int nComputes;
-    ComputeMap::ComputeData *computeMapData;
-};
-
 void WorkDistrib::sendComputeMap(void)
 {
+  if ( CkMyRank() ) return;
+
   if ( CkNumNodes() == 1 ) {
     computeMapArrived = true;
     ComputeMap::Object()->initPtrs();
     return;
   }
 
-  int size = ComputeMap::Object()->numComputes();
-
-  ComputeMapMsg *mapMsg = new (size, 0) ComputeMapMsg;
-
-  mapMsg->nComputes = size;
-  ComputeMap::Object()->pack(mapMsg->computeMapData);
-
-  CProxy_WorkDistrib workProxy(thisgroup);
-  workProxy[0].saveComputeMap(mapMsg);
-}
-
-// saveMaps() is called when the map message is received
-void WorkDistrib::saveComputeMap(ComputeMapMsg *msg)
-{
-  // Use a resend to forward messages before processing.  Otherwise the
-  // map distribution is slow on many CPUs.  We need to use a tree
-  // rather than a broadcast because some implementations of broadcast
-  // generate a copy of the message on the sender for each recipient.
-  // This is because MPI doesn't allow re-use of an outstanding buffer.
-
-  if ( CkMyRank() ) {
-    NAMD_bug("WorkDistrib::saveComputeMap called on non-rank-zero pe");
-  }
-
-  if ( computeMapArrived && CkMyPe() ) {
-    ComputeMap::Object()->unpack(msg->nComputes, msg->computeMapData);
-  }
-
-  if ( computeMapArrived ) {
+  if ( ! CkMyPe() ) { // send
+    MOStream *msg = CkpvAccess(comm)->newOutputStream(ALLBUTME, COMPUTEMAPTAG, BUFSIZE);
+    ComputeMap::Object()->pack(msg);
+    msg->end();
     delete msg;
-    ComputeMap::Object()->initPtrs();
-    return;
+  } else if ( ! CkMyRank() ) { // receive
+    MIStream *msg = CkpvAccess(comm)->newInputStream(0, COMPUTEMAPTAG);
+    ComputeMap::Object()->unpack(msg);
+    delete msg;
   }
 
   computeMapArrived = true;
-
-  int self = CkMyNode();
-  int range_begin = 0;
-  int range_end = CkNumNodes();
-  while ( self != range_begin ) {
-    ++range_begin;
-    int split = range_begin + ( range_end - range_begin ) / 2;
-    if ( self < split ) { range_end = split; }
-    else { range_begin = split; }
-  }
-  int send_near = self + 1;
-  int send_far = send_near + ( range_end - send_near ) / 2;
-
-  int pids[3];
-  int npid = 0;
-  if ( send_far < range_end ) pids[npid++] = CkNodeFirst(send_far);
-  if ( send_near < send_far ) pids[npid++] = CkNodeFirst(send_near);
-  pids[npid++] = CkMyPe();  // always send the message to ourselves
-  CProxy_WorkDistrib(thisgroup).saveComputeMap(msg,npid,pids);
+  ComputeMap::Object()->initPtrs();
 }
 
 

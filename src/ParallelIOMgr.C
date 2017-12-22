@@ -758,7 +758,7 @@ void ParallelIOMgr::updateMolInfo()
     msg->numImpropers = msg->numCalcImpropers = 0;
     msg->numCrossterms = msg->numCalcCrossterms = 0;
     msg->numExclusions = msg->numCalcExclusions = 0;
-    int numFullExclusions = msg->numCalcFullExclusions = 0;
+    int64 numFullExclusions = msg->numCalcFullExclusions = 0;
     // JLai
     msg->numLJPairs = msg->numCalcLJPairs = 0;
     // End of JLai

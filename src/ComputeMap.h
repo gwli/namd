@@ -13,6 +13,8 @@
 
 class Compute;
 class ComputeMgr;
+class MIStream;
+class MOStream;
 template<class Type> class ObjectArena;
 
 enum ComputeType
@@ -205,8 +207,8 @@ public:
   };
 protected:
   friend class WorkDistrib;
-  void pack(ComputeData *buf);
-  void unpack(int n, ComputeData *buf);
+  void pack(MOStream *msg);
+  void unpack(MIStream *msg);
   void initPtrs();
   void extendPtrs();
 

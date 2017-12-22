@@ -37,7 +37,6 @@ public:
 enum { maxPatchDepends = 126 };
 
 class PatchMapMsg;
-class ComputeMapMsg;
 class ComputeMapChangeMsg;
 
 class WorkDistrib : public CBase_WorkDistrib
@@ -105,7 +104,6 @@ public:
   void assignNodeToPatch(void);
 
   void savePatchMap(PatchMapMsg *msg);
-  void saveComputeMap(ComputeMapMsg *msg);
   inline void setPatchMapArrived(bool s) {patchMapArrived=s;}
 
 #ifdef MEM_OPT_VERSION
