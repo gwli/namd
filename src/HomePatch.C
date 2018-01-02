@@ -3317,8 +3317,8 @@ void HomePatch::addRattleForce_SOA(const BigReal invdt, Tensor& wc) {
     //Tensor vir = outer(df, atom[ig].position);
     wc += vir;
     f_normal_x[ig] += df_x;
-    f_normal_y[ig] += df_x;
-    f_normal_z[ig] += df_x;
+    f_normal_y[ig] += df_y;
+    f_normal_z[ig] += df_z;
     //f[Results::normal][ig] += df;
     vel_x[ig] = velNew[ig].x;
     vel_y[ig] = velNew[ig].y;
