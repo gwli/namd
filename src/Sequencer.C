@@ -61,6 +61,7 @@
 #endif
 
 //
+// BEGIN
 // print_* routines
 // assist in debugging SOA integration code
 //
@@ -93,6 +94,11 @@ static void print_tensor(const Tensor& t) {
   printf("%g %g %g  %g %g %g  %g %g %g\n",
       t.xx, t.xy, t.xz, t.yx, t.yy, t.yz, t.zx, t.zy, t.zz);
 }
+//
+// END
+// print_* routines
+// assist in debugging SOA integration code
+//
 
 
 Sequencer::Sequencer(HomePatch *p) :
@@ -280,9 +286,11 @@ void Sequencer::integrate_SOA(int scriptTask) {
   // note that we don't want to set up pointers directly to the buffers
   // because the allocations might get resized after atom migration.
   //
+#if 0
 D_MSG("patch->copy_atoms_to_SOA()");
   // Copy AOS to SOA.
   patch->copy_atoms_to_SOA();
+#endif
 
   // Keep track of the step number.
   int &step = patch->flags.step;
@@ -1780,12 +1788,56 @@ void Sequencer::rattle1_SOA(BigReal timestep, int pressure)
   RANGE("rattle1_SOA", 9);
   //dt *= TIMEFACTOR;  // convert to fs
   if ( simParams->rigidBonds != RIGID_NONE ) {
+#if 1
     // XXX The constraint code is pretty involved.
     // For now, copy back to AOS form.
     //patch->copy_updates_to_AOS();
     Tensor virial;
     Tensor *vp = ( pressure ? &virial : 0 );
+    // XXX pressureProfileReduction == NULL
     if ( patch->rattle1_SOA(timestep, vp, pressureProfileReduction) ) {
+      iout << iERROR << 
+        "Constraint failure; simulation has become unstable.\n" << endi;
+      Node::Object()->enableEarlyExit();
+      terminate();
+    }
+#if 0
+    printf("virial = %g %g %g  %g %g %g  %g %g %g\n",
+        virial.xx, virial.xy, virial.xz,
+        virial.yx, virial.yy, virial.yz,
+        virial.zx, virial.zy, virial.zz);
+#endif
+    ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_NORMAL,virial);
+#if 0
+    {
+      const PatchDataSOA& p = patch->patchDataSOA;
+      for (int n=0;  n < patch->numAtoms;  n++) {
+        printf("pos[%d] =  %g %g %g\n", n,
+            p.pos_x[n], p.pos_y[n], p.pos_z[n]);
+      }
+      for (int n=0;  n < patch->numAtoms;  n++) {
+        printf("vel[%d] =  %g %g %g\n", n,
+            p.vel_x[n], p.vel_y[n], p.vel_z[n]);
+      }
+      if (pressure) {
+        for (int n=0;  n < patch->numAtoms;  n++) {
+          printf("force[%d] =  %g %g %g\n", n,
+              p.f_normal_x[n], p.f_normal_y[n], p.f_normal_z[n]);
+        }
+      }
+    }
+#endif
+    // XXX The constraint code is pretty involved.
+    // Copy AOS updates back into SOA form.
+    //patch->copy_atoms_to_SOA();
+    //if (pressure) patch->copy_forces_to_SOA();
+#else
+    // XXX The constraint code is pretty involved.
+    // For now, copy back to AOS form.
+    patch->copy_updates_to_AOS();
+    Tensor virial;
+    Tensor *vp = ( pressure ? &virial : 0 );
+    if ( patch->rattle1(timestep*TIMEFACTOR, vp, pressureProfileReduction) ) {
       iout << iERROR << 
         "Constraint failure; simulation has become unstable.\n" << endi;
       Node::Object()->enableEarlyExit();
@@ -1794,8 +1846,9 @@ void Sequencer::rattle1_SOA(BigReal timestep, int pressure)
     ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_NORMAL,virial);
     // XXX The constraint code is pretty involved.
     // Copy AOS updates back into SOA form.
-    //patch->copy_atoms_to_SOA();
-    //if (pressure) patch->copy_forces_to_SOA();
+    patch->copy_atoms_to_SOA();
+    if (pressure) patch->copy_forces_to_SOA();
+#endif
   }
 }
 
@@ -1857,6 +1910,7 @@ D_MSG("patch->positionsReady()");
   }
 #endif
 
+#if 0
   //
   // DJH: Copy all data into SOA from AOS.
   //
@@ -1871,12 +1925,13 @@ D_MSG("patch->copy_updates_to_AOS()");
   }
 D_MSG("patch->copy_forces_to_AOS()");
   patch->copy_forces_to_SOA();
+#endif
 
   //
   // DJH: Copy forces to SOA.
   // Force available after suspend() has returned.
   //
-  //patch->copy_forces_to_SOA();
+  patch->copy_forces_to_SOA();
 
   if ( patch->flags.savePairlists && patch->flags.doNonbonded ) {
     pairlistsAreValid = 1;
@@ -3648,7 +3703,34 @@ void Sequencer::rattle1(BigReal dt, int pressure)
       Node::Object()->enableEarlyExit();
       terminate();
     }
+#if 0
+    printf("virial = %g %g %g  %g %g %g  %g %g %g\n",
+        virial.xx, virial.xy, virial.xz,
+        virial.yx, virial.yy, virial.yz,
+        virial.zx, virial.zy, virial.zz);
+#endif
     ADD_TENSOR_OBJECT(reduction,REDUCTION_VIRIAL_NORMAL,virial);
+#if 0
+    {
+      const FullAtom *a = patch->atom.const_begin();
+      for (int n=0;  n < patch->numAtoms;  n++) {
+        printf("pos[%d] =  %g %g %g\n", n,
+            a[n].position.x, a[n].position.y, a[n].position.z);
+      }
+      for (int n=0;  n < patch->numAtoms;  n++) {
+        printf("vel[%d] =  %g %g %g\n", n,
+            a[n].velocity.x, a[n].velocity.y, a[n].velocity.z);
+      }
+      if (pressure) {
+        for (int n=0;  n < patch->numAtoms;  n++) {
+          printf("force[%d] =  %g %g %g\n", n,
+              patch->f[Results::normal][n].x,
+              patch->f[Results::normal][n].y,
+              patch->f[Results::normal][n].z);
+        }
+      }
+    }
+#endif
   }
 }
 

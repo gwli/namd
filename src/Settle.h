@@ -73,4 +73,21 @@ void rattleN(const int icnt, const RattleParam* rattleParam,
 
 extern int settle2(BigReal mO, BigReal mH, const Vector *pos,
                    Vector *vel, BigReal dt, Tensor *virial); 
+
+void settle1_SOA(
+    const double * __restrict ref_x,
+    const double * __restrict ref_y,
+    const double * __restrict ref_z,
+    double       * __restrict pos_x,
+    double       * __restrict pos_y,
+    double       * __restrict pos_z,
+    int numWaters,
+    BigReal mOrmT,
+    BigReal mHrmT,
+    BigReal ra,
+    BigReal rb,
+    BigReal rc,
+    BigReal rra
+    );
+
 #endif

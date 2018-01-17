@@ -4354,6 +4354,7 @@ void SimParameters::check_config(ParseOptions &opts, ConfigList *config, char *&
       if (testOn || commOnly || statsOn ||
           minimizeOn ||
           maximumMove != 0 ||
+          pressureProfileOn ||
           accelMDOn ||
           adaptTempOn ||
           mollyOn ||
@@ -4368,6 +4369,7 @@ void SimParameters::check_config(ParseOptions &opts, ConfigList *config, char *&
           tclForcesOn ||
           colvarsOn ||
           reassignFreq > 0 ||
+          watmodel != WAT_TIP3 ||
           lonepairs || drudeOn) {
         iout << iWARN
           << "SOA integration is incompatible with config options\n"

@@ -176,11 +176,17 @@ int  Fclose(FILE *fout);
 #define USE_BARRIER   (CYCLE_BARRIER || PME_BARRIER || STEP_BARRIER)
 
 
-// DMK - Atom Separation (water vs. non-water)
-//   Setting this define to a non-zero value will cause the
-//   HomePatches to separate the hydrogen groups in their
-//   HomePatch::atom lists (all water molecules first, in arbitrary
-//   order, followed by all non-waters, in arbitrary order).
+//! DMK - Atom Separation (water vs. non-water)
+/*!
+ *  Setting this define to a non-zero value will cause the
+ *  HomePatches to separate the hydrogen groups in their
+ *  HomePatch::atom lists (all water molecules first, in arbitrary
+ *  order, followed by all non-waters, in arbitrary order).
+ *
+ *  Note from DH:  This macro appears to be broken.
+ *  After fixing basic compilation issues (undefined reference to simParams),
+ *  enabling it causes an infinite loop when trying to run STMV.
+ */
 #define NAMD_SeparateWaters    0
 
 // DMK - Atom Sort

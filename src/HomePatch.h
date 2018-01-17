@@ -83,6 +83,12 @@ struct PatchDataSOA {
   ResizeArray<double> f_slow_x;
   ResizeArray<double> f_slow_y;
   ResizeArray<double> f_slow_z;
+  ResizeArray<double> velNew_x;  // for rigid bond constraints
+  ResizeArray<double> velNew_y;
+  ResizeArray<double> velNew_z;
+  ResizeArray<double> posNew_x;
+  ResizeArray<double> posNew_y;
+  ResizeArray<double> posNew_z;
 
   int numAtoms;
   PatchDataSOA() : numAtoms(0) { }
@@ -320,31 +326,46 @@ protected:
   
 private:
   // Store of Atom-wise variables
-  FullAtomList  atom;
+  int numSoluteAtoms;       ///< counted at depositMigration()
+  int numSolventAtoms;      ///< counted at depositMigration()
+  int numWaters;            ///< derived from numSolventAtoms
+  FullAtomList soluteAtom;  ///< separate solute from all atoms
+  FullAtomList solventAtom; ///< separate solvent from all atoms
+  FullAtomList atom;        ///< all atoms in HomePatch
   ForceList f_saved[Results::maxNumForces];
   ExtForce *replacementForces;
 
   CudaAtomList cudaAtomList;
 
-  //
-  // DJH: SOA data structure declared here.
-  //
-  PatchDataSOA patchDataSOA;
-  //
-  // Copy fields from FullAtom into SOA form.
+  /// Rearrange the atoms into solute followed by solvent.
+  /// The solvent atoms are designated by the "isWater" flag.
+  /// The flag is applied only to non-fixed solvent atoms
+  /// that are to be constrained using SETTLE.
+  ///
+  void sort_solvent_atoms();
+
+  PatchDataSOA patchDataSOA; ///< SOA data structure declared here.
+
+  /// Copy fields from FullAtom into SOA form:  atom[] -> patchDataSOA.
+  /// Resize patchDataSOA arrays if needed.
+  ///
   void copy_atoms_to_SOA();
-  //
-  // Calculate derived constants after atom migration.
-  // Called from copy_atoms_to_SOA().
+
+  /// Calculate constants derived from the fundamental atom data.
+  /// Called from copy_atoms_to_SOA() after atom migration.
+  ///
   void calculate_derived_SOA();
-  //
-  // Copy forces into SOA form.
+
+  /// Copy forces into SOA form:  f[][] -> patchDataSOA.
+  /// Called immediately after force calculation to update the SOA forces.
+  ///
   void copy_forces_to_SOA();
-  //
-  // Copy the updated quantities, e.g., positions and velocities, from SOA
-  // back to AOS form.
+
+  /// Copy the updated quantities, e.g., positions and velocities,
+  /// from SOA back to AOS form:  patchDataSOA -> atom[].
+  ///
   void copy_updates_to_AOS();
-  //
+
 
   // DMK - Atom Separation (water vs. non-water)
   #if NAMD_SeparateWaters != 0

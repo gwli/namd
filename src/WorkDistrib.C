@@ -516,7 +516,15 @@ void WorkDistrib::fillAtomListForOnePatch(int pid, FullAtomList &alist){
 
     }
 
+    // DH - promote water checking to take place before simulation
+    // Flag the Settle water molecules.
     int size, allfixed;
+    int wathgsize = 3;
+    const int watmodel = params->watmodel;
+    if (watmodel == WAT_TIP4) wathgsize = 4;
+    else if (watmodel == WAT_SWM4) wathgsize = 5;
+    const int fixedAtomsOn = params->fixedAtomsOn;
+    const int useSettle = params->useSettle;
     for(int j=0; j < n; j+=size) {
       size = a[j].hydrogenGroupSize;
       if ( ! size ) {
@@ -528,6 +536,29 @@ void WorkDistrib::fillAtomListForOnePatch(int pid, FullAtomList &alist){
       }
       for (int k = 0; k < size; ++k ) {
         a[j+k].groupFixed = allfixed ? 1 : 0;
+      }
+      // DH - Set isWater flag for SETTLE water molecules,
+      // based on same condition as used in HomePatch::buildRattleList():
+      // The rigidBondLength of the FIRST water atom is set greater than 0.
+      if (a[j].rigidBondLength > 0) {
+        if (size != wathgsize) {
+          char errmsg[256];
+          sprintf(errmsg,
+              "Water molecule starting with atom %d contains %d atoms "
+              "but the specified water model requires %d atoms.\n",
+              a[j].id+1, size, wathgsize
+              );
+          NAMD_die(errmsg);
+        }
+        int anyfixed = 0;
+        for (int k = 0;  k < size;  k++) {
+          anyfixed += ( fixedAtomsOn && a[j+k].atomFixed );
+        }
+        if (useSettle && !anyfixed) {
+          for (int k = 0;  k < size;  k++) {
+            a[j+k].isWater = 1;
+          }
+        }
       }
     }
 
@@ -846,6 +877,7 @@ CkPrintf("patch %d (%d %d %d) has %d atoms\n",
 
     }
 
+#if 0
     int size, allfixed, k;
     for(j=0; j < n; j+=size) {
       size = a[j].hydrogenGroupSize;
@@ -859,7 +891,62 @@ CkPrintf("patch %d (%d %d %d) has %d atoms\n",
       for ( k = 0; k < size; ++k ) {
         a[j+k].groupFixed = allfixed ? 1 : 0;
       }
+      // DH - set isWater flag
+      // based on same condition as used for determining Settle:
+      // The rigidBondLength of the FIRST water atom is set greater than 0.
+      if (a[j].rigidBondLength > 0) {
+        for (k = 0;  k < size;  k++) {
+          a[j+k].isWater = 1;
+        }
+      }
     }
+#else
+    // DH - promote water checking to take place before simulation
+    // Flag the Settle water molecules.
+    int size, allfixed;
+    int wathgsize = 3;
+    const int watmodel = params->watmodel;
+    if (watmodel == WAT_TIP4) wathgsize = 4;
+    else if (watmodel == WAT_SWM4) wathgsize = 5;
+    const int fixedAtomsOn = params->fixedAtomsOn;
+    const int useSettle = params->useSettle;
+    for(int j=0; j < n; j+=size) {
+      size = a[j].hydrogenGroupSize;
+      if ( ! size ) {
+        NAMD_bug("Mother atom with hydrogenGroupSize of 0!");
+      }
+      allfixed = 1;
+      for (int k = 0; k < size; ++k ) {
+        allfixed = ( allfixed && (a[j+k].atomFixed) );
+      }
+      for (int k = 0; k < size; ++k ) {
+        a[j+k].groupFixed = allfixed ? 1 : 0;
+      }
+      // DH - Set isWater flag for SETTLE water molecules,
+      // based on same condition as used in HomePatch::buildRattleList():
+      // The rigidBondLength of the FIRST water atom is set greater than 0.
+      if (a[j].rigidBondLength > 0) {
+        if (size != wathgsize) {
+          char errmsg[256];
+          sprintf(errmsg,
+              "Water molecule starting with atom %d contains %d atoms "
+              "but the specified water model requires %d atoms.\n",
+              a[j].id+1, size, wathgsize
+              );
+          NAMD_die(errmsg);
+        }
+        int anyfixed = 0;
+        for (int k = 0;  k < size;  k++) {
+          anyfixed += ( fixedAtomsOn && a[j+k].atomFixed );
+        }
+        if (useSettle && !anyfixed) {
+          for (int k = 0;  k < size;  k++) {
+            a[j+k].isWater = 1;
+          }
+        }
+      }
+    }
+#endif
 
     if ( params->outputPatchDetails ) {
       int patchId = i;

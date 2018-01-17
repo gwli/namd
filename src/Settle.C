@@ -701,3 +701,222 @@ int settle2(BigReal mO, BigReal mH, const Vector *pos,
   return 0;
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// begin SOA code
+//
+
+// Unlike previous versions, this routine loops over all waters in patch.
+void settle1_SOA(
+    const double * __restrict ref_x,
+    const double * __restrict ref_y,
+    const double * __restrict ref_z,
+    double       * __restrict pos_x,
+    double       * __restrict pos_y,
+    double       * __restrict pos_z,
+    int numWaters,
+    BigReal mOrmT,
+    BigReal mHrmT,
+    BigReal ra,
+    BigReal rb,
+    BigReal rc,
+    BigReal rra
+    ) {
+  for (int i=0;  i < numWaters;  i++) {
+    BigReal ref0x = ref_x[3*i];
+    BigReal ref0y = ref_y[3*i];
+    BigReal ref0z = ref_z[3*i];
+    BigReal ref1x = ref_x[3*i+1];
+    BigReal ref1y = ref_y[3*i+1];
+    BigReal ref1z = ref_z[3*i+1];
+    BigReal ref2x = ref_x[3*i+2];
+    BigReal ref2y = ref_y[3*i+2];
+    BigReal ref2z = ref_z[3*i+2];
+
+    BigReal pos0x = pos_x[3*i];
+    BigReal pos0y = pos_y[3*i];
+    BigReal pos0z = pos_z[3*i];
+    BigReal pos1x = pos_x[3*i+1];
+    BigReal pos1y = pos_y[3*i+1];
+    BigReal pos1z = pos_z[3*i+1];
+    BigReal pos2x = pos_x[3*i+2];
+    BigReal pos2y = pos_y[3*i+2];
+    BigReal pos2z = pos_z[3*i+2];
+
+    // vectors in the plane of the original positions
+    BigReal b0x = ref1x - ref0x;
+    BigReal b0y = ref1y - ref0y;
+    BigReal b0z = ref1z - ref0z;
+
+    BigReal c0x = ref2x - ref0x;
+    BigReal c0y = ref2y - ref0y;
+    BigReal c0z = ref2z - ref0z;
+    
+    // new center of mass
+    BigReal d0x = pos0x*mOrmT + ((pos1x + pos2x)*mHrmT);
+    BigReal d0y = pos0y*mOrmT + ((pos1y + pos2y)*mHrmT);
+    BigReal d0z = pos0z*mOrmT + ((pos1z + pos2z)*mHrmT);
+   
+    BigReal a1x = pos0x - d0x;
+    BigReal a1y = pos0y - d0y;
+    BigReal a1z = pos0z - d0z;
+
+    BigReal b1x = pos1x - d0x;
+    BigReal b1y = pos1y - d0y;
+    BigReal b1z = pos1z - d0z;
+
+    BigReal c1x = pos2x - d0x;
+    BigReal c1y = pos2y - d0y;
+    BigReal c1z = pos2z - d0z;
+    
+    // Vectors describing transformation from original coordinate system to
+    // the 'primed' coordinate system as in the diagram.
+    // n0 = b0 x c0
+    BigReal n0x = b0y*c0z-c0y*b0z;
+    BigReal n0y = c0x*b0z-b0x*c0z;
+    BigReal n0z = b0x*c0y-c0x*b0y;
+
+    // n1 = a1 x n0
+    BigReal n1x = a1y*n0z-n0y*a1z;
+    BigReal n1y = n0x*a1z-a1x*n0z;
+    BigReal n1z = a1x*n0y-n0x*a1y;
+
+    // n2 = n0 x n1
+    BigReal n2x = n0y*n1z-n1y*n0z;
+    BigReal n2y = n1x*n0z-n0x*n1z;
+    BigReal n2z = n0x*n1y-n1x*n0y;
+
+    // Normalize n0
+    BigReal n0inv = 1.0/sqrt(n0x*n0x + n0y*n0y + n0z*n0z);
+    n0x *= n0inv;
+    n0y *= n0inv;
+    n0z *= n0inv;
+
+    BigReal n1inv = 1.0/sqrt(n1x*n1x + n1y*n1y + n1z*n1z);
+    n1x *= n1inv;
+    n1y *= n1inv;
+    n1z *= n1inv;
+
+    BigReal n2inv = 1.0/sqrt(n2x*n2x + n2y*n2y + n2z*n2z);
+    n2x *= n2inv;
+    n2y *= n2inv;
+    n2z *= n2inv;
+
+    //b0 = Vector(n1*b0, n2*b0, n0*b0); // note: b0.z is never referenced again
+    BigReal n1b0 = n1x*b0x + n1y*b0y + n1z*b0z;
+    BigReal n2b0 = n2x*b0x + n2y*b0y + n2z*b0z;
+
+    //c0 = Vector(n1*c0, n2*c0, n0*c0); // note: c0.z is never referenced again
+    BigReal n1c0 = n1x*c0x + n1y*c0y + n1z*c0z;
+    BigReal n2c0 = n2x*c0x + n2y*c0y + n2z*c0z;
+   
+    BigReal A1Z = n0x*a1x + n0y*a1y + n0z*a1z;
+    
+    //b1 = Vector(n1*b1, n2*b1, n0*b1);
+    BigReal n1b1 = n1x*b1x + n1y*b1y + n1z*b1z;
+    BigReal n2b1 = n2x*b1x + n2y*b1y + n2z*b1z;
+    BigReal n0b1 = n0x*b1x + n0y*b1y + n0z*b1z;
+
+    //c1 = Vector(n1*c1, n2*c1, n0*c1);
+    BigReal n1c1 = n1x*c1x + n1y*c1y + n1z*c1z;
+    BigReal n2c1 = n2x*c1x + n2y*c1y + n2z*c1z;
+    BigReal n0c1 = n0x*c1x + n0y*c1y + n0z*c1z;
+
+    // now we can compute positions of canonical water 
+    BigReal sinphi = A1Z * rra;
+    BigReal tmp = 1.0-sinphi*sinphi;
+    BigReal cosphi = sqrt(tmp);
+    BigReal sinpsi = (n0b1 - n0c1)/(2.0*rc*cosphi);
+    tmp = 1.0-sinpsi*sinpsi;
+    BigReal cospsi = sqrt(tmp);
+
+    BigReal rbphi = -rb*cosphi;
+    BigReal tmp1 = rc*sinpsi*sinphi;
+    BigReal tmp2 = rc*sinpsi*cosphi;
+   
+    //Vector a2(0, ra*cosphi, ra*sinphi);
+    BigReal a2y = ra*cosphi;
+
+    //Vector b2(-rc*cospsi, rbphi - tmp1, -rb*sinphi + tmp2);
+    BigReal b2x = -rc*cospsi;
+    BigReal b2y = rbphi - tmp1;
+
+    //Vector c2( rc*cosphi, rbphi + tmp1, -rb*sinphi - tmp2);
+    BigReal c2y = rbphi + tmp1;
+
+    // there are no a0 terms because we've already subtracted the term off 
+    // when we first defined b0 and c0.
+    BigReal alpha = b2x*(n1b0 - n1c0) + n2b0*b2y + n2c0*c2y;
+    BigReal beta  = b2x*(n2c0 - n2b0) + n1b0*b2y + n1c0*c2y;
+    BigReal gama  = n1b0*n2b1 - n1b1*n2b0 + n1c0*n2c1 - n1c1*n2c0;
+   
+    BigReal a2b2 = alpha*alpha + beta*beta;
+    BigReal sintheta = (alpha*gama - beta*sqrt(a2b2 - gama*gama))/a2b2;
+    BigReal costheta = sqrt(1.0 - sintheta*sintheta);
+    
+    //Vector a3( -a2y*sintheta, 
+    //            a2y*costheta,
+    //            A1Z);
+    BigReal a3x = -a2y*sintheta;
+    BigReal a3y = a2y*costheta;
+    BigReal a3z = A1Z;
+
+    // Vector b3(b2x*costheta - b2y*sintheta,
+    //             b2x*sintheta + b2y*costheta,
+    //             n0b1);
+    BigReal b3x = b2x*costheta - b2y*sintheta;
+    BigReal b3y = b2x*sintheta + b2y*costheta;
+    BigReal b3z = n0b1;
+
+    // Vector c3(-b2x*costheta - c2y*sintheta,
+    //           -b2x*sintheta + c2y*costheta,
+    //             n0c1);
+    BigReal c3x = -b2x*costheta - c2y*sintheta;
+    BigReal c3y = -b2x*sintheta + c2y*costheta;
+    BigReal c3z = n0c1;
+
+    // undo the transformation; generate new normal vectors from the transpose.
+    // Vector m1(n1.x, n2.x, n0.x);
+    BigReal m1x = n1x;
+    BigReal m1y = n2x;
+    BigReal m1z = n0x;
+
+    // Vector m2(n1.y, n2.y, n0.y);
+    BigReal m2x = n1y;
+    BigReal m2y = n2y;
+    BigReal m2z = n0y;
+
+    // Vector m0(n1.z, n2.z, n0.z);
+    BigReal m0x = n1z;
+    BigReal m0y = n2z;
+    BigReal m0z = n0z;
+
+    //pos[i*3+0] = Vector(a3*m1, a3*m2, a3*m0) + d0;
+    pos0x = a3x*m1x + a3y*m1y + a3z*m1z + d0x;
+    pos0y = a3x*m2x + a3y*m2y + a3z*m2z + d0y;
+    pos0z = a3x*m0x + a3y*m0y + a3z*m0z + d0z;
+
+    // pos[i*3+1] = Vector(b3*m1, b3*m2, b3*m0) + d0;
+    pos1x = b3x*m1x + b3y*m1y + b3z*m1z + d0x;
+    pos1y = b3x*m2x + b3y*m2y + b3z*m2z + d0y;
+    pos1z = b3x*m0x + b3y*m0y + b3z*m0z + d0z;
+
+    // pos[i*3+2] = Vector(c3*m1, c3*m2, c3*m0) + d0;
+    pos2x = c3x*m1x + c3y*m1y + c3z*m1z + d0x;
+    pos2y = c3x*m2x + c3y*m2y + c3z*m2z + d0y;
+    pos2z = c3x*m0x + c3y*m0y + c3z*m0z + d0z;
+
+    pos_x[3*i] = pos0x;
+    pos_y[3*i] = pos0y;
+    pos_z[3*i] = pos0z;
+    pos_x[3*i+1] = pos1x;
+    pos_y[3*i+1] = pos1y;
+    pos_z[3*i+1] = pos1z;
+    pos_x[3*i+2] = pos2x;
+    pos_y[3*i+2] = pos2y;
+    pos_z[3*i+2] = pos2z;
+  }
+
+} // settle1_SOA()
+

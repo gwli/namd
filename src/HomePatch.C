@@ -96,6 +96,9 @@ HomePatch::HomePatch(PatchID pd, int atomCnt) : Patch(pd)
   ,tempAtom()
 #endif
 {
+  //
+  // DH -  Ran a quick test on STMV - this constructor IS NOT called.
+  //
   settle_initialized = 0;
 
   doAtomUpdate = true;
@@ -205,6 +208,9 @@ HomePatch::HomePatch(PatchID pd, FullAtomList &al) : Patch(pd)
   ,tempAtom()
 #endif
 { 
+  //
+  // DH -  Ran a quick test on STMV - this constructor IS called.
+  //
   atom.swap(al);
   settle_initialized = 0;
 
@@ -291,6 +297,14 @@ HomePatch::HomePatch(PatchID pd, FullAtomList &al) : Patch(pd)
   isProxyChanged = 0;
 #endif
 
+  if (simParams->SOAintegrateOn) {
+    sort_solvent_atoms();
+    copy_atoms_to_SOA();
+    if (simParams->rigidBonds != RIGID_NONE) {
+      buildRattleList_SOA();
+      rattleListValid = true;
+    }
+  }
 
   // DMK - Atom Separation (water vs. non-water)
   #if NAMD_SeparateWaters != 0
@@ -341,6 +355,16 @@ void HomePatch::reinitAtoms(FullAtomList &al) {
   rattleListValid = false;
 
   if ( ! numNeighbors ) atomMapper->registerIDsFullAtom(atom.begin(),atom.end());
+
+  SimParameters *simParams = Node::Object()->simParameters;
+  if (simParams->SOAintegrateOn) {
+    sort_solvent_atoms();
+    copy_atoms_to_SOA();
+    if (simParams->rigidBonds != RIGID_NONE) {
+      buildRattleList_SOA();
+      rattleListValid = true;
+    }
+  }
 
   // DMK - Atom Separation (water vs. non-water)
   #if NAMD_SeparateWaters != 0
@@ -1381,11 +1405,37 @@ void HomePatch::saveForce(const int ftag)
 }
 
 
-//
-// Copying atom[] -> patchDataSOA.
-// Resize patchDataSOA arrays if needed.
-//
+void HomePatch::sort_solvent_atoms() {
+  solventAtom.resize(numAtoms);
+  soluteAtom.resize(numAtoms);
+  FullAtom * __restrict a_i = atom.begin();
+  FullAtom * __restrict solvent_i = solventAtom.begin();
+  FullAtom * __restrict solute_i = soluteAtom.begin();
+  numSolventAtoms = 0;
+  numSoluteAtoms = 0;
+  int i;
+  for (i = 0;  i < numAtoms;  i++) {
+    if (a_i[i].isWater) {
+      solvent_i[numSolventAtoms++] = a_i[i];
+    }
+    else {
+      solute_i[numSoluteAtoms++] = a_i[i];
+    }
+  }
+  for (i = 0;  i < numSoluteAtoms;  i++) {
+    a_i[i] = solute_i[i];
+  }
+  for ( ;  i < numAtoms;  i++) {
+    a_i[i] = solvent_i[i - numSoluteAtoms];
+  }
+  // XXX improve next line to avoid division
+  // XXX should NOT assume 3 atoms per water
+  numWaters = numSolventAtoms / 3;
+}
+
+
 void HomePatch::copy_atoms_to_SOA() {
+  const SimParameters *simParams = Node::Object()->simParameters;
   if (patchDataSOA.numAtoms != numAtoms) {
     // resize the arrays to proper length
     patchDataSOA.hydrogenGroupSize.resize(numAtoms);
@@ -1413,6 +1463,14 @@ void HomePatch::copy_atoms_to_SOA() {
     patchDataSOA.f_slow_x.resize(numAtoms);
     patchDataSOA.f_slow_y.resize(numAtoms);
     patchDataSOA.f_slow_z.resize(numAtoms);
+    if (simParams->rigidBonds != RIGID_NONE) {
+      patchDataSOA.velNew_x.resize(numAtoms);
+      patchDataSOA.velNew_y.resize(numAtoms);
+      patchDataSOA.velNew_z.resize(numAtoms);
+      patchDataSOA.posNew_x.resize(numAtoms);
+      patchDataSOA.posNew_y.resize(numAtoms);
+      patchDataSOA.posNew_z.resize(numAtoms);
+    }
     patchDataSOA.numAtoms = numAtoms;
   }
 
@@ -1434,11 +1492,8 @@ void HomePatch::copy_atoms_to_SOA() {
 }
 
 
-//
-// Calculate constants derived from the fundamental atom data.
-//
 void HomePatch::calculate_derived_SOA() {
-  SimParameters *simParams = Node::Object()->simParameters;
+  const SimParameters *simParams = Node::Object()->simParameters;
   for (int i=0;  i < numAtoms;  i++) {
     patchDataSOA.recipMass[i] = (atom[i].mass > 0 ? 1.f / atom[i].mass : 0);
   }
@@ -1458,9 +1513,6 @@ void HomePatch::calculate_derived_SOA() {
 }
 
 
-//
-// Copy forces from f[][] -> patchDataSOA.
-//
 void HomePatch::copy_forces_to_SOA() {
   const Force *fnormal = f[Results::normal].const_begin();
   for (int i=0;  i < numAtoms;  i++) {
@@ -1501,9 +1553,6 @@ void HomePatch::copy_forces_to_SOA() {
 }
 
 
-//
-// Copying patchDataSOA -> atom[].
-//
 void HomePatch::copy_updates_to_AOS() {
   for (int i=0;  i < numAtoms;  i++) {
     atom[i].velocity.x = patchDataSOA.vel_x[i];
@@ -3148,8 +3197,8 @@ void HomePatch::buildRattleList_SOA() {
   const int useSettle = simParams->useSettle;
 
   // Re-size to contain numAtoms elements
-  velNew.resize(numAtoms);
-  posNew.resize(numAtoms);
+  //velNew.resize(numAtoms);
+  //posNew.resize(numAtoms);
 
   // Size of a hydrogen group for water
   int wathgsize = 3;
@@ -3163,7 +3212,9 @@ void HomePatch::buildRattleList_SOA() {
   // XXX this will move to Molecule::build_atom_status when that 
   // version is debugged
   if ( ! settle_initialized ) {
-    for ( int ig = 0; ig < numAtoms; ig += hydrogenGroupSize[ig] ) {
+    for (int ig = numSoluteAtoms;
+         ig < numAtoms;
+         ig += hydrogenGroupSize[ig]) {
       // find a water
       if (rigidBondLength[ig] > 0) {
         int oatm;
@@ -3192,34 +3243,35 @@ void HomePatch::buildRattleList_SOA() {
     }
   }
   
-  Vector ref[10];
-  BigReal rmass[10];
+  //Vector ref[10];
+  //BigReal rmass[10];
   BigReal dsq[10];
-  int fixed[10];
+  //int fixed[10];
   int ial[10];
   int ibl[10];
 
-  int numSettle = 0;
-  int numRattle = 0;
-  int posRattleParam = 0;
+  //int numSettle = 0;
+  //int numRattle = 0;
+  //int posRattleParam = 0;
 
-  settleList.clear();
+  //settleList.clear();
   rattleList.clear();
   noconstList.clear();
   rattleParam.clear();
 
-  for ( int ig = 0; ig < numAtoms; ig += hydrogenGroupSize[ig] ) {
+  for (int ig = 0;  ig < numSoluteAtoms;  ig += hydrogenGroupSize[ig]) {
     int hgs = hydrogenGroupSize[ig];
     if ( hgs == 1 ) {
       // only one atom in group
       noconstList.push_back(ig);
       continue;
     }
+#if 0
     int anyfixed = 0;
     for (int i = 0; i < hgs; ++i ) {
-      ref[i].x = pos_x[ig+i];
-      ref[i].y = pos_y[ig+i];
-      ref[i].z = pos_z[ig+i];
+      //ref[i].x = pos_x[ig+i];
+      //ref[i].y = pos_y[ig+i];
+      //ref[i].z = pos_z[ig+i];
       rmass[i] = recipMass[ig+i];
       fixed[i] = ( fixedAtomsOn && atom[ig+i].atomFixed ); // XXX
       if ( fixed[i] ) {
@@ -3227,9 +3279,12 @@ void HomePatch::buildRattleList_SOA() {
         rmass[i] = 0.;
       }
     }
+#endif
     int icnt = 0;
+    // DH: convert rigid bond length to double to square it?
     BigReal tmp = rigidBondLength[ig];
     if (tmp > 0.0) {  // for water
+#if 0
       if (hgs != wathgsize) {
         char errmsg[256];
         sprintf(errmsg,
@@ -3245,21 +3300,22 @@ void HomePatch::buildRattleList_SOA() {
         settleList.push_back(ig);
         continue;
       }
-      if ( !(fixed[1] && fixed[2]) ) {
+#endif
+      //if ( !(fixed[1] && fixed[2]) ) {
         dsq[icnt] = tmp * tmp;
         ial[icnt] = 1;
         ibl[icnt] = 2;
         ++icnt;
-      }
+      //}
     } // if (tmp > 0.0)
     for (int i = 1; i < hgs; ++i ) {  // normal bonds to mother atom
       if ( ( tmp = rigidBondLength[ig+i] ) > 0 ) {
-        if ( !(fixed[0] && fixed[i]) ) {
+        //if ( !(fixed[0] && fixed[i]) ) {
           dsq[icnt] = tmp * tmp;
           ial[icnt] = 0;
           ibl[icnt] = i;
           ++icnt;
-        }
+        //}
       }
     }
     if ( icnt == 0 ) {
@@ -3279,11 +3335,36 @@ void HomePatch::buildRattleList_SOA() {
       rattleParamElem.ia = a;
       rattleParamElem.ib = b;
       rattleParamElem.dsq = dsq[i];
-      rattleParamElem.rma = rmass[a];
-      rattleParamElem.rmb = rmass[b];
+      rattleParamElem.rma = recipMass[ig+a];
+      rattleParamElem.rmb = recipMass[ig+b];
+      //rattleParamElem.rma = rmass[a];
+      //rattleParamElem.rmb = rmass[b];
       rattleParam.push_back(rattleParamElem);
     }
   }
+
+#if 0
+  // testing ordering of water vs non-water constraints
+  if (patchID == 748 /* settleList.size() > 0 && rattleList.size() > 0 */) {
+    printf("For patchID %d:", patchID);
+    printf("\nsettle list:");
+    for (int i=0;  i < settleList.size();  i++) {
+      int ig = settleList[i];
+      printf("  %d", ig);
+    }
+    printf("\nrattle list:");
+    for (int i=0;  i < rattleList.size();  i++) {
+      int ig = rattleList[i].ig;
+      printf("  %d", ig);
+    }
+    printf("\nnon-constraint list:");
+    for (int i=0;  i < noconstList.size();  i++) {
+      int ig = noconstList[i];
+      printf("  %d", ig);
+    }
+    printf("\n");
+  }
+#endif
 
 }
 
@@ -3292,6 +3373,9 @@ void HomePatch::addRattleForce_SOA(const BigReal invdt, Tensor& wc) {
   const double * __restrict pos_x = patchDataSOA.pos_x.const_begin();
   const double * __restrict pos_y = patchDataSOA.pos_y.const_begin();
   const double * __restrict pos_z = patchDataSOA.pos_z.const_begin();
+  const double * __restrict velNew_x = patchDataSOA.velNew_x.const_begin();
+  const double * __restrict velNew_y = patchDataSOA.velNew_y.const_begin();
+  const double * __restrict velNew_z = patchDataSOA.velNew_z.const_begin();
   double * __restrict vel_x = patchDataSOA.vel_x.begin();
   double * __restrict vel_y = patchDataSOA.vel_y.begin();
   double * __restrict vel_z = patchDataSOA.vel_z.begin();
@@ -3299,39 +3383,44 @@ void HomePatch::addRattleForce_SOA(const BigReal invdt, Tensor& wc) {
   double * __restrict f_normal_y = patchDataSOA.f_normal_y.begin();
   double * __restrict f_normal_z = patchDataSOA.f_normal_z.begin();
 
+  Tensor vir;  // = 0
   for (int ig = 0; ig < numAtoms; ++ig ) {
-    BigReal df_x = (velNew[ig].x - vel_x[ig]) * ( mass[ig] * invdt );
-    BigReal df_y = (velNew[ig].y - vel_y[ig]) * ( mass[ig] * invdt );
-    BigReal df_z = (velNew[ig].z - vel_z[ig]) * ( mass[ig] * invdt );
+    BigReal df_x = (velNew_x[ig] - vel_x[ig]) * ( mass[ig] * invdt );
+    BigReal df_y = (velNew_y[ig] - vel_y[ig]) * ( mass[ig] * invdt );
+    BigReal df_z = (velNew_z[ig] - vel_z[ig]) * ( mass[ig] * invdt );
     //Force df = (velNew[ig] - atom[ig].velocity) * ( atom[ig].mass * invdt );
-    Tensor vir;
-    vir.xx = df_x * pos_x[ig];
-    vir.xy = df_x * pos_y[ig];
-    vir.xz = df_x * pos_z[ig];
-    vir.yx = df_y * pos_x[ig];
-    vir.yy = df_y * pos_y[ig];
-    vir.yz = df_y * pos_z[ig];
-    vir.zx = df_z * pos_x[ig];
-    vir.zy = df_z * pos_y[ig];
-    vir.zz = df_z * pos_z[ig];
-    //Tensor vir = outer(df, atom[ig].position);
-    wc += vir;
     f_normal_x[ig] += df_x;
     f_normal_y[ig] += df_y;
     f_normal_z[ig] += df_z;
     //f[Results::normal][ig] += df;
-    vel_x[ig] = velNew[ig].x;
-    vel_y[ig] = velNew[ig].y;
-    vel_z[ig] = velNew[ig].z;
+    vir.xx += df_x * pos_x[ig];
+    vir.xy += df_x * pos_y[ig];
+    vir.xz += df_x * pos_z[ig];
+    vir.yx += df_y * pos_x[ig];
+    vir.yy += df_y * pos_y[ig];
+    vir.yz += df_y * pos_z[ig];
+    vir.zx += df_z * pos_x[ig];
+    vir.zy += df_z * pos_y[ig];
+    vir.zz += df_z * pos_z[ig];
+    //vir += outer(df, atom[ig].position);
+  }
+  wc += vir;
+  for (int ig = 0;  ig < numAtoms;  ig++) {
+    vel_x[ig] = velNew_x[ig];
+    vel_y[ig] = velNew_y[ig];
+    vel_z[ig] = velNew_z[ig];
     //atom[ig].velocity = velNew[ig];
   }
 }
 
 // dt scaled by 1/TIMEFACTOR
+// Removed code handling fixed atoms.
+// XXX ppreduction == NULL
 int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial, 
   SubmitReduction *ppreduction) {
 
   SimParameters *simParams = Node::Object()->simParameters;
+#if 0
   if (simParams->watmodel != WAT_TIP3 || ppreduction) {
     // Call old rattle1 -method instead
     copy_updates_to_AOS();
@@ -3344,6 +3433,7 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
     buildRattleList_SOA();
     rattleListValid = true;
   }
+#endif
 
   double * __restrict pos_x = patchDataSOA.pos_x.begin();
   double * __restrict pos_y = patchDataSOA.pos_y.begin();
@@ -3351,16 +3441,41 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
   double * __restrict vel_x = patchDataSOA.vel_x.begin();
   double * __restrict vel_y = patchDataSOA.vel_y.begin();
   double * __restrict vel_z = patchDataSOA.vel_z.begin();
-  const int * __restrict hydrogenGroupSize = patchDataSOA.hydrogenGroupSize.const_begin();
+  double * __restrict posNew_x = patchDataSOA.posNew_x.begin();
+  double * __restrict posNew_y = patchDataSOA.posNew_y.begin();
+  double * __restrict posNew_z = patchDataSOA.posNew_z.begin();
+  double * __restrict velNew_x = patchDataSOA.velNew_x.begin();
+  double * __restrict velNew_y = patchDataSOA.velNew_y.begin();
+  double * __restrict velNew_z = patchDataSOA.velNew_z.begin();
+  const int * __restrict hydrogenGroupSize =
+    patchDataSOA.hydrogenGroupSize.const_begin();
+#ifdef __INTEL_COMPILER
+  __assume_aligned(pos_x,64);
+  __assume_aligned(pos_y,64);
+  __assume_aligned(pos_z,64);
+  __assume_aligned(vel_x,64);
+  __assume_aligned(vel_y,64);
+  __assume_aligned(vel_z,64);
+  __assume_aligned(posNew_x,64);
+  __assume_aligned(posNew_y,64);
+  __assume_aligned(posNew_z,64);
+  __assume_aligned(velNew_x,64);
+  __assume_aligned(velNew_y,64);
+  __assume_aligned(velNew_z,64);
+  __assume_aligned(hydrogenGroupSize,64);
+#endif
 
+#if 0
   const int fixedAtomsOn = simParams->fixedAtomsOn;
-  const int useSettle = simParams->useSettle;
+#endif
+  //const int useSettle = simParams->useSettle;
   //const BigReal dt = timestep / TIMEFACTOR;
   const BigReal invdt = (dt == 0.) ? 0. : 1.0 / dt; // precalc 1/dt
   const BigReal tol2 = 2.0 * simParams->rigidTol;
   int maxiter = simParams->rigidIter;
   int dieOnError = simParams->rigidDie;
 
+#if 0
   Vector ref[10];  // reference position
   Vector pos[10];  // new position
   Vector vel[10];  // new velocity
@@ -3428,10 +3543,40 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
       posNew[ig+i] = pos[i];
     }
   }
+#else
+  // calculate full step update to all positions
+  for (int i=0;  i < numAtoms;  i++) {
+    posNew_x[i] = pos_x[i] + vel_x[i] * dt;
+    posNew_y[i] = pos_y[i] + vel_y[i] * dt;
+    posNew_z[i] = pos_z[i] + vel_z[i] * dt;
+  }
+
+  // call settle to process all waters at once
+  // XXX this assumes sorting waters into consecutive part of list
+  //int numWaters = settleList.size();
+  if (numSolventAtoms > 0) {
+    int n = numSoluteAtoms;  // index of first water in list is past solute
+    /*
+    if (numSolventAtoms != settleList.size() ||
+        n != settleList[0]) {
+      fprintf(stderr, "pid=%d:  Disagreement between "
+          "settleList and numSolventAtoms\n", patchID);
+      fprintf(stderr, "numSolventAtoms = %d  settleList.size() = %d\n",
+          numSolventAtoms, settleList.size());
+    } else {
+    */
+    settle1_SOA(&pos_x[n], &pos_y[n], &pos_z[n],
+        &posNew_x[n], &posNew_y[n], &posNew_z[n],
+        numWaters,
+        settle_mOrmT, settle_mHrmT, settle_ra,
+        settle_rb, settle_rc, settle_rra);        
+    //}
+  }
+#endif
 
   int posParam = 0;
   for (int j=0;j < rattleList.size();++j) {
-
+#if 0
     BigReal refx[10];
     BigReal refy[10];
     BigReal refz[10];
@@ -3439,9 +3584,11 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
     BigReal posx[10];
     BigReal posy[10];
     BigReal posz[10];
+#endif
 
     int ig = rattleList[j].ig;
     int icnt = rattleList[j].icnt;
+#if 0
     int hgs = atom[ig].hydrogenGroupSize;
     for (int i = 0; i < hgs; ++i ) {
       ref[i].x = pos_x[ig+i];
@@ -3452,13 +3599,17 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
       pos[i].y = pos_y[ig+i];
       pos[i].z = pos_z[ig+i];
       //pos[i] = atom[ig+i].position;
+#if 0
       // XXX find something better than conditional and hitting atomFixed?
       if (!(fixedAtomsOn && atom[ig+i].atomFixed)) {
+#endif
         pos[i].x += vel_x[ig+i] * dt;
         pos[i].y += vel_y[ig+i] * dt;
         pos[i].z += vel_z[ig+i] * dt;
         //pos[i] += atom[ig+i].velocity * dt;
+#if 0
       }
+#endif
       refx[i] = ref[i].x;
       refy[i] = ref[i].y;
       refz[i] = ref[i].z;
@@ -3466,27 +3617,39 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
       posy[i] = pos[i].y;
       posz[i] = pos[i].z;
     }
+#endif
 
 
     bool done;
     bool consFailure;
     if (icnt == 1) {
       rattlePair<1>(&rattleParam[posParam],
+#if 0
         refx, refy, refz,
-        posx, posy, posz);
+        posx, posy, posz
+#else
+        &pos_x[ig], &pos_y[ig], &pos_z[ig],
+        &posNew_x[ig], &posNew_y[ig], &posNew_z[ig]
+#endif
+        );
       done = true;
       consFailure = false;
     } else {
       rattleN(icnt, &rattleParam[posParam],
+#if 0
         refx, refy, refz,
         posx, posy, posz,
+#else
+        &pos_x[ig], &pos_y[ig], &pos_z[ig],
+        &posNew_x[ig], &posNew_y[ig], &posNew_z[ig],
+#endif
         tol2, maxiter,
         done, consFailure);
     }
 
     // Advance position in rattleParam
     posParam += icnt;
-
+#if 0
     for (int i = 0; i < hgs; ++i ) {
       pos[i].x = posx[i];
       pos[i].y = posy[i];
@@ -3497,7 +3660,7 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
       velNew[ig+i] = (pos[i] - ref[i])*invdt;
       posNew[ig+i] = pos[i];
     }
-
+#endif
     if ( consFailure ) {
       if ( dieOnError ) {
         iout << iERROR << "Constraint failure in RATTLE algorithm for atom "
@@ -3518,8 +3681,9 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
       }
     }
 
-  }
+  } // end rattle
 
+#if 0
   // Finally, we have to go through atoms that are not involved in rattle just so that we have
   // their positions and velocities up-to-date in posNew and velNew
   for (int j=0;j < noconstList.size();++j) {
@@ -3537,25 +3701,102 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
       //posNew[ig+i] = atom[ig+i].position;
     }
   }
+#else
+  // Now that all new positions are known, determine new velocities
+  // needed to reach new position.
+  for (int i=0;  i < numAtoms;  i++) {
+    velNew_x[i] = (posNew_x[i] - pos_x[i]) * invdt;
+    velNew_y[i] = (posNew_y[i] - pos_y[i]) * invdt;
+    velNew_z[i] = (posNew_z[i] - pos_z[i]) * invdt;
+  }
+
+  // Bring new positions and velocities back to reference for noconstList.
+  // No need to check hydrogen group size, since no fixed atoms.
+  int numNoconst = noconstList.size();
+  for (int j=0;  j < numNoconst;  j++) {
+    int ig = noconstList[j];
+    posNew_x[ig] = pos_x[ig];
+    posNew_y[ig] = pos_y[ig];
+    posNew_z[ig] = pos_z[ig];
+    velNew_x[ig] = vel_x[ig];
+    velNew_y[ig] = vel_y[ig];
+    velNew_z[ig] = vel_z[ig];
+  }
+#endif
 
   if ( invdt == 0 ) {
     for (int ig = 0; ig < numAtoms; ++ig ) {
+#if 0
       pos_x[ig] = posNew[ig].x;
       pos_y[ig] = posNew[ig].y;
       pos_z[ig] = posNew[ig].z;
+#else
+      pos_x[ig] = posNew_x[ig];
+      pos_y[ig] = posNew_y[ig];
+      pos_z[ig] = posNew_z[ig];
+#endif
       //atom[ig].position = posNew[ig];
     }
-  } else if ( virial == 0 ) {
+  }
+  else if ( virial == 0 ) {
     for (int ig = 0; ig < numAtoms; ++ig ) {
+#if 0
       vel_x[ig] = velNew[ig].x;
       vel_y[ig] = velNew[ig].y;
       vel_z[ig] = velNew[ig].z;
+#else
+      vel_x[ig] = velNew_x[ig];
+      vel_y[ig] = velNew_y[ig];
+      vel_z[ig] = velNew_z[ig];
+#endif
       //atom[ig].velocity = velNew[ig];
     }
-  } else {
-    Tensor wc;  // constraint virial
-    addRattleForce_SOA(invdt, wc);
-    *virial += wc;
+  }
+  else {
+#if 0
+    //Tensor wc;  // constraint virial
+    addRattleForce_SOA(invdt, *virial);
+    //*virial += wc;
+#else
+    const float  * __restrict mass = patchDataSOA.mass.const_begin();
+    double * __restrict f_normal_x = patchDataSOA.f_normal_x.begin();
+    double * __restrict f_normal_y = patchDataSOA.f_normal_y.begin();
+    double * __restrict f_normal_z = patchDataSOA.f_normal_z.begin();
+#ifdef __INTEL_COMPILER
+    __assume_aligned(mass,64);
+    __assume_aligned(f_normal_x,64);
+    __assume_aligned(f_normal_y,64);
+    __assume_aligned(f_normal_z,64);
+#endif
+    Tensor vir;  // = 0
+    for (int ig = 0;  ig < numAtoms;  ig++) {
+      BigReal df_x = (velNew_x[ig] - vel_x[ig]) * ( mass[ig] * invdt );
+      BigReal df_y = (velNew_y[ig] - vel_y[ig]) * ( mass[ig] * invdt );
+      BigReal df_z = (velNew_z[ig] - vel_z[ig]) * ( mass[ig] * invdt );
+      //Force df = (velNew[ig] - atom[ig].velocity) * ( atom[ig].mass * invdt );
+      f_normal_x[ig] += df_x;
+      f_normal_y[ig] += df_y;
+      f_normal_z[ig] += df_z;
+      //f[Results::normal][ig] += df;
+      vir.xx += df_x * pos_x[ig];
+      vir.xy += df_x * pos_y[ig];
+      vir.xz += df_x * pos_z[ig];
+      vir.yx += df_y * pos_x[ig];
+      vir.yy += df_y * pos_y[ig];
+      vir.yz += df_y * pos_z[ig];
+      vir.zx += df_z * pos_x[ig];
+      vir.zy += df_z * pos_y[ig];
+      vir.zz += df_z * pos_z[ig];
+      //vir += outer(df, atom[ig].position);
+    }
+    *virial += vir;
+    for (int ig = 0;  ig < numAtoms;  ig++) {
+      vel_x[ig] = velNew_x[ig];
+      vel_y[ig] = velNew_y[ig];
+      vel_z[ig] = velNew_z[ig];
+      //atom[ig].velocity = velNew[ig];
+    }
+#endif
   }
 
   return 0;
@@ -3942,6 +4183,16 @@ void HomePatch::revert(void) {
 
   if ( ! numNeighbors ) atomMapper->registerIDsFullAtom(atom.begin(),atom.end());
 
+  SimParameters *simParams = Node::Object()->simParameters;
+  if (simParams->SOAintegrateOn) {
+    sort_solvent_atoms();
+    copy_atoms_to_SOA();
+    if (simParams->rigidBonds != RIGID_NONE) {
+      buildRattleList_SOA();
+      rattleListValid = true;
+    }
+  }
+
   // DMK - Atom Separation (water vs. non-water)
   #if NAMD_SeparateWaters != 0
     numWaterAtoms = checkpoint_numWaterAtoms;
@@ -4018,6 +4269,14 @@ void HomePatch::recvCheckpointLoad(CheckpointAtomsMsg *msg) {  // initiating rep
     doAtomUpdate = true;
     rattleListValid = false;
     if ( ! numNeighbors ) atomMapper->registerIDsFullAtom(atom.begin(),atom.end());
+    if (simParams->SOAintegrateOn) {
+      sort_solvent_atoms();
+      copy_atoms_to_SOA();
+      if (simParams->rigidBonds != RIGID_NONE) {
+        buildRattleList_SOA();
+        rattleListValid = true;
+      }
+    }
   }
   if ( checkpoint_task == SCRIPT_CHECKPOINT_LOAD ) {
     recvCheckpointAck();
@@ -4088,6 +4347,15 @@ void HomePatch::recvExchangeMsg(ExchangeAtomsMsg *msg) {
   doAtomUpdate = true;
   rattleListValid = false;
   if ( ! numNeighbors ) atomMapper->registerIDsFullAtom(atom.begin(),atom.end());
+  SimParameters *simParams = Node::Object()->simParameters;
+  if (simParams->SOAintegrateOn) {
+    sort_solvent_atoms();
+    copy_atoms_to_SOA();
+    if (simParams->rigidBonds != RIGID_NONE) {
+      buildRattleList_SOA();
+      rattleListValid = true;
+    }
+  }
 }
 
 void HomePatch::submitLoadStats(int timestep)
@@ -4501,6 +4769,18 @@ HomePatch::depositMigration(MigrateAtomsMsg *msg)
 
   DebugM(3,"Counter on " << patchID << " = " << patchMigrationCounter << "\n");
   if (!--patchMigrationCounter) {
+    // DH - All atoms are now incorporated from migration.
+    // This is where we can separate waters from non-waters and
+    // perhaps sort non-waters by hydrogen group size.
+    SimParameters *simParams = Node::Object()->simParameters;
+    if (simParams->SOAintegrateOn) {
+      sort_solvent_atoms();
+      copy_atoms_to_SOA();
+      if (simParams->rigidBonds != RIGID_NONE) {
+        buildRattleList_SOA();
+        rattleListValid = true;
+      }
+    }
     DebugM(3,"All Migrations are in for patch "<<patchID<<"\n");
     allMigrationIn = true;
     patchMigrationCounter = numNeighbors;
@@ -4525,6 +4805,7 @@ HomePatch::depositMigration(MigrateAtomsMsg *msg)
 //   atom list (regardless of whether or not the atom list is has been
 //   sorted yet or not).
 void HomePatch::separateAtoms() {
+  SimParameters *simParams = Node::Object()->simParameters;
 
   // Basic Idea:  Iterate through all the atoms in the current list
   //   of atoms.  Pack the waters in the current atoms list and move
@@ -4602,6 +4883,7 @@ void HomePatch::separateAtoms() {
 // NOTE: This function applies the transformations to the incoming
 //   atoms as it is separating them.
 void HomePatch::mergeAtomList(FullAtomList &al) {
+  SimParameters *simParams = Node::Object()->simParameters;
 
   // Sanity check
   if (al.size() <= 0) return;  // Nothing to do

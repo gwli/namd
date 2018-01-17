@@ -146,7 +146,29 @@ typedef struct seg_resid
     int resid;
 }AtomSegResInfo;
 
-// List maintaining the global atom indicies sorted by helix groups.
+//! Molecule stores the structural information for the system.
+/*!
+ * This class is used to store all of the structural       
+ * information for a simulation.  It reads in this information 
+ * from a .psf file, cross checks and obtains some information
+ * from the Parameters object that is passed in, and then     
+ * stores all this information for later use. 
+ *
+ * One Molecule instance is kept on each PE (or node for SMP build),
+ * accessed by Node::Object()->molecule.  There is an initial setup and
+ * file reading phase, after which there is a communication phase 
+ * using the Communicate MIStream / MOStream to update all copies,
+ * all before simulation begins.
+ *
+ * Keeps list maintaining the global atom indicies sorted by helix groups,
+ * and also bond connectivity and exclusion lists.
+ *
+ * Reads PSF file, compressed PSF file (for memory optimized version),
+ * Gromacs topology file, and PDB files for various per atom constants
+ * and flags (Langevin, fixed atoms, FEP, Go residue IDs, grid force
+ * parameters, moving/rotating drag parameters, torque parameters, stirred 
+ * atoms, pressure exclusions).
+ */
 class Molecule
 {
  private:
