@@ -317,6 +317,7 @@ struct QMAtomData {
 
 class QMGrpCalcMsg: public CMessage_QMGrpCalcMsg {
 public:
+    int timestep;
     int grpIndx;
     int peIter;
     int numQMAtoms ;
@@ -1285,11 +1286,14 @@ void ComputeQMMgr::recvFullQM(QMCoordMsg* qmFullMsg) {
     QMCompute->processFullQM(qmFullMsg);
 }
 
-typedef std::map<Real,BigReal> GrpDistMap ;
+typedef std::map<Real, std::pair<Position,BigReal> > GrpDistMap ;
+typedef std::pair<Position,BigReal> PosDistPair ;
 
 void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
     
     ResizeArrayIter<PatchElem> ap(patchList); 
+    
+    const Lattice & lattice = patchList[0].p->lattice;
     
     // Dynamically accumulates point charges as they are found.
     // The same MM atom may be added to this vector more than once if it is 
@@ -1299,7 +1303,8 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
     // This will keep the set of QM groups with which each 
     // point charge should be used. It is re-used for each atom in this
     // patch so we can controll the creation of the compPCVec vector.
-    // The first item in the pair is the QM Group ID, the second is the shortest
+    // The first item in the pair is the QM Group ID, the second is a pair 
+    // with the point charge position (after PBC wraping) and the shortest
     // distance between the point charge and an atom of this QM group.
     GrpDistMap chrgGrpMap ;
     
@@ -1326,6 +1331,8 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
     int atomIter = 0;
     int uniqueCounter = 0;
     
+    const ComputeQMAtom *qmDataPtn = qmFullMsg->coord;
+    
     switch ( qmFullMsg->pcSelMode ) {
     
     case PCMODEUPDATESEL:
@@ -1347,13 +1354,8 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
         // Iterates over the local atoms in a PE, all patches.
         for(int i=0; i<localNumAtoms; ++i) {
             
-            const ComputeQMAtom *qmDataPtn = qmFullMsg->coord;
-            
             // A new subset for each atom in this node.
             chrgGrpMap.clear();
-            
-            Position posMM = patchList[0].p->lattice.reverse_transform(x[i].position, 
-                                                          fullAtms[i].transform) ;
             
             Real pcGrpID = qmAtomGroup[xExt[i].id];
             
@@ -1368,10 +1370,10 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
                         charge = qmAtmChrg[qi];
                         break;
                     }
-                    
                 }
             }
             
+            qmDataPtn = qmFullMsg->coord;
             for(int j=0; j<qmFullMsg->numAtoms; j++, ++qmDataPtn) {
                 
                 Real qmGrpID = qmDataPtn->qmGrpID;
@@ -1389,13 +1391,18 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
                     continue;
                 }
                 
-                Position posQM = qmDataPtn->position;
+                // calculate distance between QM atom and Poitn Charge
+                Vector r12 = lattice.delta(x[i].position,qmDataPtn->position);
                 
-                Vector distV = posMM - posQM;
-                BigReal dist = distV.length();
+                BigReal dist = r12.length();  // Distance between atoms
                 
                 if ( dist < cutoff ){
                     
+                    // Since the QM region may have been wrapped around the periodic box, we
+                    // reposition point charges with respect to unwrapped coordinates of QM atoms,
+                    // finding the shortest distance between the point charge and the QM region.
+                    
+                    Position posMM = qmDataPtn->position + r12;
                     auto ret = chrgGrpMap.find(qmGrpID) ;
                     
                     // If 'ret' points to end, it means the item was not found
@@ -1405,18 +1412,19 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
                     // created in the QM system in question.
                     // 'ret' means a lot to me!
                     if ( ret ==  chrgGrpMap.end()) {
-                        chrgGrpMap.insert(std::pair<Real,BigReal>(qmGrpID, dist));
+                        chrgGrpMap.insert(std::pair<Real,PosDistPair>(qmGrpID, 
+                                                         PosDistPair(posMM,dist) ) );
                     }
                     else {
                         // If the current distance is smaller than the one in 
                         // the map, we update it so that we have the smallest
                         // distance between the point charge and any QM atom in 
                         // this group.
-                        if (dist < ret->second) {
-                            ret->second = dist;
+                        if (dist < ret->second.second) {
+                            ret->second.first = posMM ;
+                            ret->second.second = dist ;
                         }
                     }
-                    
                 }
             }
             
@@ -1427,8 +1435,8 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
                 // to the vector, repeating it for each QM group that has it
                 // within its cuttoff radius.
                 compPCVec.add(
-                    ComputeQMPntChrg(posMM, charge, xExt[i].id,
-                                  mapIt->first, atomIter, mapIt->second, 
+                    ComputeQMPntChrg(mapIt->second.first, charge, xExt[i].id,
+                                  mapIt->first, atomIter, mapIt->second.second, 
                                   fullAtms[i].mass, fullAtms[i].vdwType)
                                );
             }
@@ -1464,9 +1472,43 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
         for(int i=0; i<localNumAtoms; ++i) {
             
             if (pcIDSortList.find(xExt[i].id) != NULL ) {
-                Position posMM = patchList[0].p->lattice.reverse_transform(
-                                                        x[i].position, 
-                                                        fullAtms[i].transform) ;
+                
+                BigReal dist =  0;
+                Position posMM = 0; // Temporary point charge position for QM calculation.
+                
+                bool firstIngroupQM = true;
+                qmDataPtn = qmFullMsg->coord;
+                for(int j=0; j<qmFullMsg->numAtoms; j++, ++qmDataPtn) {
+                    
+                    // Assuming we only have one QM region for now
+                    // This optio will be deprecated
+                    
+                    // Only verify distances to atoms in the QM group for which we are
+                    // gathering point charges.
+//                     if ( qmDataPtn->qmGrpID != qmGrpIDArray[grpIndx] ) continue;
+                    
+                    // calculate distance between QM atom and Poitn Charge
+                    Vector r12 = lattice.delta(x[i].position,qmDataPtn->position);
+                    
+                    // We wait to find the first QM atom in the target QM group before we
+                    // set the first guess at a minimal distance and point charge position.
+                    if ( firstIngroupQM ) {
+                        dist = r12.length();
+                        
+                        // Reposition classical point charge with respect to unwrapped QM position.
+                        posMM = qmDataPtn->position + r12;
+                        
+                        firstIngroupQM = false;
+                    }
+                    
+                    // If we find a QM atom with a shorter dstance to the point charge,
+                    // set that as the PC distance and reposition the PC
+                    if ( r12.length() < dist ) {
+                        dist = r12.length();
+                        posMM = qmDataPtn->position + r12 ;
+                    }
+                    
+                }
                 
                 Real pcGrpID = qmAtomGroup[xExt[i].id];
                 Real charge = x[i].charge;
@@ -1486,8 +1528,8 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
                 
                 compPCVec.add(
                     ComputeQMPntChrg(posMM, charge, xExt[i].id,
-                                  0, atomIter, 0, fullAtms[i].mass, 
-                                  fullAtms[i].vdwType));
+                                  0, atomIter, 0, 
+                                  fullAtms[i].mass, fullAtms[i].vdwType));
             }
             
             atomIter++;
@@ -1522,10 +1564,48 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
                 
                 if (customPCLists[grpIndx].find(xExt[i].id) != NULL){
                     
-                    Position posMM = patchList[0].p->lattice.reverse_transform(
-                                                        x[i].position, 
-                                                        fullAtms[i].transform) ;
+                    // Initialize the search for the smallest distance between
+                    // point charge and QM atoms. This will determine the closest position
+                    // of the point charge accounting for periodic boundary conditions.
                     
+                    // Since the QM region may have been wrapped around the periodic box, we
+                    // reposition point charges with respect to unwrapped coordinates of QM atoms.
+                    
+                    BigReal dist =  0;
+                    Position posMM = 0; // Temporary point charge position for QM calculation.
+                    
+                    bool firstIngroupQM = true;
+                    qmDataPtn = qmFullMsg->coord;
+                    for(int j=0; j<qmFullMsg->numAtoms; j++, ++qmDataPtn) {
+                        
+                        // Only verify distances to atoms in the QM group for which we are
+                        // gathering point charges.
+                        if ( qmDataPtn->qmGrpID != qmGrpIDArray[grpIndx] ) continue;
+                        
+                        // calculate distance between QM atom and Poitn Charge
+                        Vector r12 = lattice.delta(x[i].position,qmDataPtn->position);
+                        
+                        // We wait to find the first QM atom in the target QM group before we
+                        // set the first guess at a minimal distance and point charge position.
+                        if ( firstIngroupQM ) {
+                            dist = r12.length();
+                            
+                            // Reposition classical point charge with respect to unwrapped QM position.
+                            posMM = qmDataPtn->position + r12;
+                            
+                            firstIngroupQM = false;
+                        }
+                        
+                        // If we find a QM atom with a shorter dstance to the point charge,
+                        // set that as the PC distance and reposition the PC
+                        if ( r12.length() < dist ) {
+                            dist = r12.length();
+                            posMM = qmDataPtn->position + r12 ;
+                        }
+                        
+                    }
+                    
+                    // After determining the position o fthe point charge, get its partial charge.
                     Real pcGrpID = qmAtomGroup[xExt[i].id];
                     Real charge = x[i].charge;
                     
@@ -1538,15 +1618,13 @@ void ComputeQM::processFullQM(QMCoordMsg* qmFullMsg) {
                                 charge = qmAtmChrg[qi];
                                 break;
                             }
-                            
                         }
                     }
                     
                     compPCVec.add(
                         ComputeQMPntChrg(posMM, charge, xExt[i].id,
-                                      qmGrpIDArray[grpIndx], atomIter, 
-                                      0, fullAtms[i].mass, fullAtms[i].vdwType));
-                    
+                                      qmGrpIDArray[grpIndx], atomIter, dist, 
+                                      fullAtms[i].mass, fullAtms[i].vdwType));
                 }
                 
             }
@@ -1870,9 +1948,9 @@ void ComputeQMMgr::recvPntChrg(QMPntChrgMsg *msg) {
     const int *const *const chargeTarget = molPtr->get_qmMMChargeTarget() ;
     const int *const numTargs = molPtr->get_qmMMNumTargs() ;
     
-//     BigReal constants = COULOMB*simParams->nonbondedScaling/(simParams->dielectric*4.0*PI) ;
+    BigReal constants = COULOMB * simParams->nonbondedScaling / (simParams->dielectric) ;
     // COULOMB is in kcal*￼Angs/(mol￼*e^2)
-    BigReal constants = COULOMB ;
+//     BigReal constants = COULOMB ;
     
     if ( qmPCFreq > 0 ) {
         DebugM(4,"Using point charge stride of " << qmPCFreq << "\n")
@@ -2204,6 +2282,7 @@ void ComputeQMMgr::recvPntChrg(QMPntChrgMsg *msg) {
         
         int dataSize = grpQMAtmVec.size() + dummyAtoms.size() + grpAppldChrgVec.size();
         QMGrpCalcMsg *msg = new (dataSize, configLines.size(), 0) QMGrpCalcMsg;
+        msg->timestep = timeStep;
         msg->grpIndx = grpIter;
         msg->peIter = peIter;
         msg->charge = grpChrg[grpIter];
@@ -2790,7 +2869,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
     if ( ! inputFile ) {
         iout << iERROR << "Could not open input file for writing: " 
         << inputFileName << "\n" << endi ;
-        NAMD_die(strerror(errno));
+        NAMD_err("Error writing QM input file.");
     }
     
     // Builds the command that will be executed
@@ -2801,6 +2880,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
     qmCommand.append(msg->execPath) ;
     qmCommand.append(" ") ;
     qmCommand.append(inputFileName) ;
+    qmCommand.append(" > /dev/null 2>&1") ;
     
     // Builds the file name where MOPAC will place the gradient
     // This is also relative to the input file name.
@@ -2817,12 +2897,12 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
         if ( ! chrgFile ) {
             iout << iERROR << "Could not open charge file for writing: " 
             << pntChrgFileName << "\n" << endi ;
-            NAMD_die(strerror(errno));
+            NAMD_err("Error writing point charge file.");
         }
         
         iret = fprintf(chrgFile,"\n%d %d\n", 
                        msg->numQMAtoms, msg->numAllAtoms - msg->numQMAtoms);
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing point charge file."); }
     }
     
     // writes configuration lines to the input file.
@@ -2831,12 +2911,12 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
     while (std::getline(ss, confLineStr) ) {
         confLineStr.append("\n");
         iret = fprintf(inputFile,confLineStr.c_str());
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     }
     
     
     iret = fprintf(inputFile,"\n");
-    if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+    if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     
     DebugM(4, "Writing " << msg->numAllAtoms << " QM atom coords in file " 
     << inputFileName.c_str() << " and " << msg->numAllPntChrgs 
@@ -2852,7 +2932,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
         
         iret = fprintf(inputFile,"%s %f 1 %f 1 %f 1\n",
                        atmP->element,x,y,z);
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
         
         if (msg->numAllPntChrgs) {
             BigReal phi = 0;
@@ -2886,7 +2966,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
             
             iret = fprintf(chrgFile,"%s %f %f %f %f\n",
                            atmP->element,x,y,z, phi);
-            if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+            if ( iret < 0 ) { NAMD_err("Error writing point charge file."); }
         }
     }
     
@@ -2903,7 +2983,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
         prepProc.append(" ") ;
         prepProc.append(inputFileName) ;
         iret = system(prepProc.c_str());
-        if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+        if ( iret == -1 ) { NAMD_err("Error running preparation command for QM calculation."); }
         if ( iret ) { NAMD_die("Error running preparation command for QM calculation."); }
     }
     
@@ -2911,7 +2991,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
     DebugM(4,"Running command ->" << qmCommand.c_str() << "<-" << std::endl);
     iret = system(qmCommand.c_str());
     
-    if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+    if ( iret == -1 ) { NAMD_err("Error running command for QM forces calculation."); }
     if ( iret ) { NAMD_die("Error running command for QM forces calculation."); }
 
     if (msg->secProcOn) {
@@ -2919,25 +2999,31 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
         std::string secProc(msg->secProc) ;
         secProc.append(" ") ;
         secProc.append(inputFileName) ;
+        itosConv.str("");
+        itosConv.clear() ;
+        itosConv << msg->timestep ;
+        secProc.append(" ") ;
+        secProc += itosConv.str() ;
+        
         iret = system(secProc.c_str());
-        if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+        if ( iret == -1 ) { NAMD_err("Error running second command for QM calculation."); }
         if ( iret ) { NAMD_die("Error running second command for QM calculation."); }
     }
     
     // remove coordinate file
 //     iret = remove(inputFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
 
     // remove coordinate file
 //     iret = remove(pntChrgFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
     
     // opens output file
     DebugM(4,"Reading QM data from file " << outputFileName.c_str() << std::endl);
     outputFile = fopen(outputFileName.c_str(),"r");
     if ( ! outputFile ) {
         iout << iERROR << "Could not find QM output file!\n" << endi;
-        NAMD_die(strerror(errno)); 
+        NAMD_err(0); 
     }
     
     // Resets the pointers.
@@ -3027,7 +3113,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
             chargeFields = true;
             atmIndx = 0;
             
-            // If the used ask for charges NOT to be read from MOPAC,
+            // If the user asked for charges NOT to be read from MOPAC,
             // we skip the charge reading step.
             if (msg->qmAtmChrgMode == QMCHRGNONE) {
                 chargeFields = false;
@@ -3244,7 +3330,7 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
     // remove force file
 //     DebugM(4, "Removing output file: " << outputFileName << std::endl) ;
 //     iret = remove(outputFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
     
     if (! (chargesRead && gradsRead) ) {
         NAMD_die("Error reading QM forces file. Not all data could be read!");
@@ -3422,7 +3508,8 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
 //                 BigReal recip_energy = (1-tmp_b)/r = erf(tmp_a)/r;
                 BigReal recip_energy = (1-tmp_b)/r;
                 
-                BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+//                 BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+                BigReal recip_gradient = -(1-corr_gradient)/(r*r);
                 
                 // Final force and energy correction for this pair of atoms.
                 BigReal energy = kq_i * p_j_charge * recip_energy ;
@@ -3476,7 +3563,8 @@ void ComputeQMMgr::calcMOPAC(QMGrpCalcMsg *msg)
 //                 BigReal recip_energy = (1-tmp_b)/r = erf(tmp_a)/r;
                 BigReal recip_energy = (1-tmp_b)/r;
                 
-                BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+//                 BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+                BigReal recip_gradient = -(1-corr_gradient)/(r*r);
                 
                 // Final force and energy correction for this pair of atoms.
                 BigReal energy = kq_i * p_j_charge * recip_energy ;
@@ -3598,7 +3686,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
     if ( ! inputFile ) {
         iout << iERROR << "Could not open input file for writing: " 
         << inputFileName << "\n" << endi ;
-        NAMD_die(strerror(errno));
+        NAMD_err("Error writing QM input file.");
     }
     
     // Builds the command that will be executed
@@ -3640,7 +3728,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
         if ( ! chrgFile ) {
             iout << iERROR << "Could not open charge file for writing: " 
             << pntChrgFileName << "\n" << endi ;
-            NAMD_die(strerror(errno));
+            NAMD_err("Error writing point charge file.");
         }
         
         int numPntChrgs = 0;
@@ -3650,7 +3738,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
         }
         
         iret = fprintf(chrgFile,"%d\n", numPntChrgs);
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing point charge file."); }
     }
     
     // writes configuration lines to the input file.
@@ -3659,25 +3747,25 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
     while (std::getline(ss, confLineStr) ) {
         confLineStr.append("\n");
         iret = fprintf(inputFile,confLineStr.c_str());
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     }
     
     if (msg->numAllPntChrgs) {
         iret = fprintf(inputFile,"%%pointcharges \"%s\"\n", pntChrgFileName.c_str());
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     }
     
     iret = fprintf(inputFile,"\n\n%%coords\n  CTyp xyz\n");
-    if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+    if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     
     iret = fprintf(inputFile,"  Charge %f\n",msg->charge);
-    if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+    if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     
     iret = fprintf(inputFile,"  Mult %f\n",msg->multiplicity);
-    if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+    if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     
     iret = fprintf(inputFile,"  Units Angs\n  coords\n\n");
-    if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+    if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     
     DebugM(4, "Writing " << msg->numAllAtoms << " QM atom coords in file " << 
     inputFileName.c_str() << " and " << msg->numAllPntChrgs << 
@@ -3693,12 +3781,12 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
         
         iret = fprintf(inputFile,"  %s %f %f %f\n",
                        atmP->element,x,y,z);
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
         
     }
     
     iret = fprintf(inputFile,"  end\nend\n");
-    if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+    if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     
     if (msg->numAllPntChrgs) {
         // Write point charges to file.
@@ -3716,7 +3804,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
             
             iret = fprintf(chrgFile,"%f %f %f %f\n",
                            charge,x,y,z);
-            if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+            if ( iret < 0 ) { NAMD_err("Error writing point charge file."); }
         }
         
         fclose(chrgFile);
@@ -3731,7 +3819,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
         prepProc.append(" ") ;
         prepProc.append(inputFileName) ;
         iret = system(prepProc.c_str());
-        if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+        if ( iret == -1 ) { NAMD_err("Error running preparation command for QM calculation."); }
         if ( iret ) { NAMD_die("Error running preparation command for QM calculation."); }
     }
     
@@ -3739,7 +3827,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
     DebugM(4,"Running command ->" << qmCommand.c_str() << "<-" << std::endl);
     iret = system(qmCommand.c_str());
     
-    if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+    if ( iret == -1 ) { NAMD_err("Error running command for QM forces calculation."); }
     if ( iret ) { NAMD_die("Error running command for QM forces calculation."); }
 
     if (msg->secProcOn) {
@@ -3747,25 +3835,31 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
         std::string secProc(msg->secProc) ;
         secProc.append(" ") ;
         secProc.append(inputFileName) ;
+        itosConv.str("");
+        itosConv.clear() ;
+        itosConv << msg->timestep ;
+        secProc.append(" ") ;
+        secProc += itosConv.str() ;
+        
         iret = system(secProc.c_str());
-        if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+        if ( iret == -1 ) { NAMD_err("Error running second command for QM calculation."); }
         if ( iret ) { NAMD_die("Error running second command for QM calculation."); }
     }
 
     // remove coordinate file
 //     iret = remove(inputFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
 
     // remove coordinate file
 //     iret = remove(pntChrgFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
     
     // opens output file
     DebugM(4,"Reading QM data from file " << outputFileName.c_str() << std::endl);
     outputFile = fopen(outputFileName.c_str(),"r");
     if ( ! outputFile ) {
         iout << iERROR << "Could not find QM output file!\n" << endi;
-        NAMD_die(strerror(errno)); 
+        NAMD_err(0); 
     }
 
     // Resets the pointers.
@@ -3966,7 +4060,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
         if ( ! outputFile ) {
             iout << iERROR << "Could not find Redirect output file:"
             << tmpRedirectFileName << std::endl << endi;
-            NAMD_die(strerror(errno)); 
+            NAMD_err(0); 
         }
         
         DebugM(4,"Opened tmeporary output for charge reading: " << tmpRedirectFileName.c_str() << "\n");
@@ -4130,7 +4224,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
     // remove force file
 //     DebugM(4, "Removing output file: " << outputFileName << std::endl) ;
 //     iret = remove(outputFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
     
     
     DebugM(4, "Applying forces on " << msg->numRealPntChrgs << " point charges" << std::endl) ;
@@ -4150,7 +4244,7 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
         if ( ! outputFile ) {
             iout << iERROR << "Could not find PC gradient output file:"
             << pcGradFileName << std::endl << endi;
-            NAMD_die(strerror(errno)); 
+            NAMD_err(0); 
         }
         
         DebugM(4,"Opened pc output for gradient reading: " << pcGradFileName.c_str() << "\n");
@@ -4251,7 +4345,8 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
 //                 BigReal recip_energy = (1-tmp_b)/r = erf(tmp_a)/r;
                 BigReal recip_energy = (1-tmp_b)/r;
                 
-                BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+//                 BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+                BigReal recip_gradient = -(1-corr_gradient)/(r*r);
                 
                 const BigReal kq_i = p_i_charge * constants;
                 
@@ -4304,7 +4399,8 @@ void ComputeQMMgr::calcORCA(QMGrpCalcMsg *msg)
 //                 BigReal recip_energy = (1-tmp_b)/r = erf(tmp_a)/r;
                 BigReal recip_energy = (1-tmp_b)/r;
                 
-                BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+//                 BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+                BigReal recip_gradient = -(1-corr_gradient)/(r*r);
                 
                 // Final force and energy correction for this pair of atoms.
                 BigReal energy = kq_i * p_j_charge * recip_energy ;
@@ -4422,7 +4518,7 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
     if ( ! inputFile ) {
         iout << iERROR << "Could not open input file for writing: " 
         << inputFileName << "\n" << endi ;
-        NAMD_die(strerror(errno));
+        NAMD_err("Error writing QM input file.");
     }
     
     // Builds the command that will be executed
@@ -4446,7 +4542,7 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
     }
     
     iret = fprintf(inputFile,"%d %d\n",msg->numAllAtoms, numPntChrgs);
-    if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+    if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
     
     DebugM(4, "Writing " << msg->numAllAtoms << " QM atom coords in file " << 
         inputFileName.c_str() << " and " << msg->numAllPntChrgs << 
@@ -4462,7 +4558,7 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
         
         iret = fprintf(inputFile,"%f %f %f %s\n",
                        x,y,z,atmP->element);
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
         
     }
     
@@ -4482,7 +4578,7 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
         
         iret = fprintf(inputFile,"%f %f %f %f\n",
                        x,y,z,charge);
-        if ( iret < 0 ) { NAMD_die(strerror(errno)); }
+        if ( iret < 0 ) { NAMD_err("Error writing QM input file."); }
         
         numWritenPCs++;
     }
@@ -4496,7 +4592,7 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
         prepProc.append(" ") ;
         prepProc.append(inputFileName) ;
         iret = system(prepProc.c_str());
-        if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+        if ( iret == -1 ) { NAMD_err("Error running preparation command for QM calculation."); }
         if ( iret ) { NAMD_die("Error running preparation command for QM calculation."); }
     }
     
@@ -4504,7 +4600,7 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
     DebugM(4,"Running command ->" << qmCommand.c_str() << "<-" << std::endl);
     iret = system(qmCommand.c_str());
     
-    if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+    if ( iret == -1 ) { NAMD_err("Error running command for QM forces calculation."); }
     if ( iret ) { NAMD_die("Error running command for QM forces calculation."); }
 
     if (msg->secProcOn) {
@@ -4512,25 +4608,31 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
         std::string secProc(msg->secProc) ;
         secProc.append(" ") ;
         secProc.append(inputFileName) ;
+        itosConv.str("");
+        itosConv.clear() ;
+        itosConv << msg->timestep ;
+        secProc.append(" ") ;
+        secProc += itosConv.str() ;
+        
         iret = system(secProc.c_str());
-        if ( iret == -1 ) { NAMD_die(strerror(errno)); }
+        if ( iret == -1 ) { NAMD_err("Error running second command for QM calculation."); }
         if ( iret ) { NAMD_die("Error running second command for QM calculation."); }
     }
 
     // remove coordinate file
 //     iret = remove(inputFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
 
     // remove coordinate file
 //     iret = remove(pntChrgFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
     
     // opens output file
     DebugM(4,"Reading QM data from file " << outputFileName.c_str() << std::endl);
     outputFile = fopen(outputFileName.c_str(),"r");
     if ( ! outputFile ) {
         iout << iERROR << "Could not find QM output file!\n" << endi;
-        NAMD_die(strerror(errno)); 
+        NAMD_err(0); 
     }
 
     // Resets the pointers.
@@ -4774,7 +4876,7 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
     // remove force file
 //     DebugM(4, "Removing output file: " << outputFileName << std::endl) ;
 //     iret = remove(outputFileName);
-//     if ( iret ) { NAMD_die(strerror(errno)); }
+//     if ( iret ) { NAMD_err(0); }
     
     if (usrPCnum == 0) {
         DebugM(4, "Applying forces on " << msg->numRealPntChrgs << " point charges" << std::endl) ;
@@ -4875,7 +4977,8 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
 //                 BigReal recip_energy = (1-tmp_b)/r = erf(tmp_a)/r;
                 BigReal recip_energy = (1-tmp_b)/r;
                 
-                BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+//                 BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+                BigReal recip_gradient = -(1-corr_gradient)/(r*r);
                 
                 const BigReal kq_i = p_i_charge * constants;
                 
@@ -4928,7 +5031,8 @@ void ComputeQMMgr::calcUSR(QMGrpCalcMsg *msg) {
 //                 BigReal recip_energy = (1-tmp_b)/r = erf(tmp_a)/r;
                 BigReal recip_energy = (1-tmp_b)/r;
                 
-                BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+//                 BigReal recip_gradient = -(1-corr_gradient)/(r*2);
+                BigReal recip_gradient = -(1-corr_gradient)/(r*r);
                 
                 // Final force and energy correction for this pair of atoms.
                 BigReal energy = kq_i * p_j_charge * recip_energy ;

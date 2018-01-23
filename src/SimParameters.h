@@ -375,6 +375,8 @@ public:
         
 //fepb
   Bool alchOnAtStartup;     //  Ensure that alchemy is set up properly
+  Bool alchFepOnAtStartup;
+  Bool alchThermIntOnAtStartup;
   Bool alchOn;              //  Doing alchemical simulation?
   Bool alchFepOn;           //  Doing alchemical simulation?
   Bool alchThermIntOn;      //  Doing thermodynamic integration?

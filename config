@@ -635,38 +635,6 @@ begin:
     echo 'include .rootdir/arch/$(NAMD_ARCH).fftw3' >> Make.config
   else if ( $use_fftw ) echo 'include .rootdir/arch/$(NAMD_ARCH).fftw' >> Make.config
   endif
-  if ( $use_cuda ) then
-    if ( $?CUDA_PREFIX ) then
-      set cuda_ver=`${CUDA_PREFIX}/bin/nvcc --version | grep release | cut -d " " -f5 | cut -d "," -f1`
-    else
-      set cuda_ver=`nvcc --version | grep release | cut -d " " -f5 | cut -d "," -f1`
-    endif
-    if ( "x$cuda_ver" == x ) then
-      echo "Did not find CUDA installation, set --cuda-prefix to directory"
-      exit 1
-    else if ( $cuda_ver =~ 9.* ) then
-      echo "CUDA 9 is detected: version $cuda_ver"
-      echo 'include .rootdir/arch/$(NAMD_ARCH).cuda9' >> Make.config
-    else if ( $cuda_ver =~ 8.* ) then
-      echo "CUDA 8 is detected: version $cuda_ver"
-      echo 'include .rootdir/arch/$(NAMD_ARCH).cuda' >> Make.config
-    else if ( $cuda_ver =~ 7.5* ) then
-      echo "CUDA 7 is detected: version $cuda_ver"
-      echo 'include .rootdir/arch/$(NAMD_ARCH).cuda75' >> Make.config
-    else
-      echo "CUDA version $cuda_ver is not supported!"
-      exit 1
-    endif
-  endif
-  if ( $use_cuda && "x$CUDA_GENCODE" != x ) then
-    echo "CUDAGENCODE = $CUDA_GENCODE" >> Make.config
-    if ( "x$CUDA_DLINK" != x ) then
-      echo "CUDADLINKOPTS = $CUDA_DLINK" >> Make.config
-    else
-      echo "# runtime error if dlink architectures not available in libcufft_static" >> Make.config
-      echo "CUDADLINKOPTS = $CUDA_GENCODE" >> Make.config
-    endif
-  endif
 
   if ( $use_memopt ) echo 'MEMOPT=-DMEM_OPT_VERSION' >> Make.config
 
@@ -718,6 +686,7 @@ begin:
   endif
 
   if ( $use_cuda ) then
+    echo 'include .rootdir/arch/$(NAMD_ARCH).cuda' >> Make.config
     set CUDART_SO_PAT = 'lib64/libcudart.so.[1-9]'
     set CUFFT_SO_PAT = 'lib64/libcufft.so.[1-9]'
     switch ( `uname -s` )
@@ -735,15 +704,29 @@ begin:
         set CUDA_PREFIX=`cygpath -d "$CUDA_PREFIX"`
         set CUDA_PREFIX=`cygpath "$CUDA_PREFIX"`
       endif
-      echo "CUDADIR = $CUDA_PREFIX" >> Make.config
     else if ( -d .rootdir/cuda/lib && -d .rootdir/cuda/include ) then
       echo "Using CUDA build found in main build directory"
-      echo 'CUDADIR = .rootdir/cuda' >> Make.config
       set CUDA_PREFIX = .rootdir/cuda
     else if ( -d $HOME/cuda/lib && -d $HOME/cuda/include ) then
       echo "Using CUDA build found in $HOME/cuda"
-      echo 'CUDADIR = $(HOME)/cuda' >> Make.config
       set CUDA_PREFIX = $HOME/cuda
+    endif
+    if ( $?CUDA_PREFIX ) then
+      set cuda_ver=`${CUDA_PREFIX}/bin/nvcc --version | grep release | cut -d " " -f5 | cut -d "," -f1`
+      set NAMD_ARCH = `awk '/^NAMD_ARCH =/ {print $3}' .rootdir/arch/$ARCH.arch`
+      if ( "x$cuda_ver" == x ) then
+        echo "Warning: Did not find CUDA installation in $CUDA_PREFIX"
+      else if ( $cuda_ver =~ 9.* && -f .rootdir/arch/$NAMD_ARCH.cuda9 ) then
+        echo "CUDA 9 is detected: version $cuda_ver"
+        echo 'include .rootdir/arch/$(NAMD_ARCH).cuda9' >> Make.config
+      else if ( $cuda_ver =~ 8.* && -f .rootdir/arch/$NAMD_ARCH.cuda8 ) then
+        echo "CUDA 8 is detected: version $cuda_ver"
+        echo 'include .rootdir/arch/$(NAMD_ARCH).cuda8' >> Make.config
+      else if ( $cuda_ver =~ 7.5* && -f .rootdir/arch/$NAMD_ARCH.cuda75 ) then
+        echo "CUDA 7 is detected: version $cuda_ver"
+        echo 'include .rootdir/arch/$(NAMD_ARCH).cuda75' >> Make.config
+      endif
+      echo "CUDADIR = $CUDA_PREFIX" >> Make.config
     endif
     if ( $?CUDA_PREFIX ) then
       set CUDART_SO_FULL=`glob "$CUDA_PREFIX"/$CUDART_SO_PAT`
@@ -768,6 +751,15 @@ begin:
       else
         echo "Warning: Found $CUDART_SO_FULL but no cufft"
       endif
+    endif
+  endif
+  if ( $use_cuda && "x$CUDA_GENCODE" != x ) then
+    echo "CUDAGENCODE = $CUDA_GENCODE" >> Make.config
+    if ( "x$CUDA_DLINK" != x ) then
+      echo "CUDADLINKOPTS = $CUDA_DLINK" >> Make.config
+    else
+      echo "# runtime error if dlink architectures not available in libcufft_static" >> Make.config
+      echo "CUDADLINKOPTS = $CUDA_GENCODE" >> Make.config
     endif
   endif
 

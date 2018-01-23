@@ -23,9 +23,8 @@ Constant-pH MD in NAMD is based on the scheme first proposed by
   by Chen and Roux~\cite{Chen_JChemTheoryComput_2015_v11_p3919}.
 A detailed description of the modifications and improvements made in the NAMD
   implementation has been presented elsewhere by Radak,
-  \textit{et al.}~\cite{Radak_cpH_2017} and this is likely the best
-  comprehensive description of the method, its uses, and its
-  limitations/pitfalls.
+  \textit{et al.}~\cite{Radak_JChemTheoryComput_2017_v13_p5933} and this is likely the
+  best comprehensive description of the method, its uses, and its limitations/pitfalls.
 Herein the goal is to provide a working understanding of how the implementation
   works and what kinds of data it produces.
 
@@ -52,40 +51,8 @@ This is especially useful when the number of protonation states is extremely
   large and/or prior information on the importance of particular states is
   not available.
 
-% convenience command for drawing a box around text
-\newcommand\simbox[2][]{\tikz[overlay]\node[fill=blue!20,inner sep=2pt,
-    anchor=text, rectangle, rounded corners=1mm,#1] {#2};\phantom{#2}}
-
-\begin{figure}[h]\centering
-  \begin{subfigure}{0.5\textwidth}\centering
-    \schemestart
-      \simbox{E-R$_1$H:R$_2$H}
-      \arrow{<=>[$-$H$^{+}$]}
-      \simbox{E-R$_1^-$:R$_2$H}
-      \arrow{<=>[*0$-$H$^{+}$]}[-90]
-      \simbox{E-R$_1^-$:R$_2^-$}
-      \arrow{<=>[$-$H$^{+}$]}[180]
-      \simbox{E-R$_1$H:R$_2^-$}
-      \arrow{<=>[*0$-$H$^{+}$]}[90]
-    \schemestop
-    \\[8pt]
-    \textbf{conventional MD}
-  \end{subfigure}% this is needed for avoiding a line break
-  ~
-  \begin{subfigure}{0.5\textwidth}\centering
-    \simbox{\schemestart
-      E-R$_1$H:R$_2$H
-      \arrow{<=>[$-$H$^{+}$]}
-      E-R$_1^-$:R$_2$H
-      \arrow{<=>[*0$-$H$^{+}$]}[-90]
-      E-R$_1^-$:R$_2^-$
-      \arrow{<=>[$-$H$^{+}$]}[180]
-      E-R$_1$H:R$_2^-$
-      \arrow{<=>[*0$-$H$^{+}$]}[90]
-    \schemestop}
-    \\[8pt]
-    \textbf{constant-pH MD}
-  \end{subfigure}
+\begin{figure}[h]\center{
+  \includegraphics[width=\textwidth]{figures/namdcph_cycle}
   \caption{\label{fig:cphStateCycle}
     The core difference between conventional and constant-pH MD can be
       illustrated by a simple enzyme $E$ with four protonation states
@@ -99,7 +66,7 @@ This is especially useful when the number of protonation states is extremely
     Determining the relative importance of the states is a direct result of the
       simulation.
   }
-\end{figure}
+}\end{figure}
 
 In formal terms, conventional MD samples from a canonical ensemble, whereas
   constant-pH MD samples from a semi-grand canonical ensemble.
@@ -133,11 +100,11 @@ Although a constant-pH MD system may contain any number of titratable protons,
 For a generic chemical species A, this corresponds to the usual deprotonation
   reaction definition, except with fixed pH:
 \begin{equation*}
-  \schemestart
+ \mathrm{
   HA
-  \arrow{<=>[$-$H$^{+}$][pH fixed]}
-  A$^{-}$.
-  \schemestop
+  \underset{\text{pH fixed}}{\stackrel{-H^{+}}{\rightleftharpoons}}
+  A^{-}
+ }.
 \end{equation*}
 In the language of statistical mechanics the species HA and A$^{-}$ refer to
   all terms in Eq.~\eqref{eqn:semigrand} which do and do not, respectively,
@@ -222,7 +189,7 @@ However, this is more of a limitation of classical MD than a particular
 A useful analogy may be the use of Langevin dynamics as a thermostat as
   opposed to a phenomonological model for Brownian motion.
 
-\begin{figure}[h]\centering
+\begin{figure}[h]\center{
   \includegraphics[width=0.6\textwidth]{figures/namdcph_nemdmc_scheme}
   \caption{\label{fig:namdcph_nemdmc}
     The basic constant-pH MD scheme in NAMD is to alternate equilibrium 
@@ -233,7 +200,7 @@ A useful analogy may be the use of Langevin dynamics as a thermostat as
     If the move is rejected, sampling continues as if the move were never
       attempted at all.
   }
-\end{figure}
+}\end{figure}
 
 The basic scheme in NAMD is to alternately sample the protonation state and
   then the configuration space within that state.
@@ -280,7 +247,8 @@ In short, there are intrinsic limits based on:
   2) the ``molecular'' time scale, $\tau_{\text{m}}$, on which these
   fluctuations change.
 These effects are roughly captured by the
-  expression~\cite{Radak_JChemPhys_2016_v145_p134109, Radak_cpH_2017}:
+  expression~\cite{Radak_JChemPhys_2016_v145_p134109,
+    Radak_JChemTheoryComput_2017_v13_p5933}:
 \begin{equation*}
   \tau_{\text{opt}}
   \le
@@ -294,7 +262,8 @@ Overall, switching times on the order of tens of picoseconds tend to be optimal
   is adiabatic and exerts zero work).
 For titratable groups exposed primarily to aqueous solvent, a switch on the
   order of 10-20~ps appears to give near optimal
-  results~\cite{Radak_JChemPhys_2016_v145_p134109, Radak_cpH_2017}.
+  results~\cite{Radak_JChemPhys_2016_v145_p134109,
+    Radak_JChemTheoryComput_2017_v13_p5933}. 
 An equivalent formulation of the above expression is that mean acceptance rates
   around 20-25\% are likely near optimal.
 
@@ -323,79 +292,7 @@ An equivalent formulation of the above expression is that mean acceptance rates
 
 \newpage
 \begin{center}
-{\Large {\tt namdcph} Execution Flow Chart}
-\vspace{11pt}
-
-\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=3cm,
-  minimum height=1cm, text centered, draw=black, fill=red!30]
-\tikzstyle{io} = [trapezium, trapezium stretches=true, trapezium left angle=70,
-  trapezium right angle=110, minimum width=3cm, minimum height=1cm,
-  text centered, draw=black, fill=blue!30]
-\tikzstyle{process} = [rectangle, minimum width=3cm, minimum height=1cm,
-  text centered, draw=black, fill=orange!30]
-\tikzstyle{decision} = [diamond, minimum width=3cm, minimum height=1cm,
-  text centered, draw=black, fill=green!30]
-\tikzstyle{arrow} = [-{Latex[length=3mm]}]
-
-\begin{tikzpicture}[node distance=2cm]
-  \node (start) [startstop] {PSF/PDB};
-  \node (in1) [io, below of=start] {CONF/RTF/PRM};
-  \node (pro1) [process, below of=in1] {Build residue definitions};
-  \node (pro2) [process, right of=pro1, text width=3cm, xshift=3cm]
-    {Build residues (match resnames)};
-  \node (pro3) [process, right of=in1, text width=3cm,
-    xshift=3cm, yshift=1cm] {Initialize states/pK$_{\text{a,i}}$:\\
-    1) use specs.\\2) cphrst};
-  \node (dec1) [decision, right of=pro2, text width=3cm, xshift=3cm,
-    yshift=1.1cm, inner sep=-5pt] {All states initialized?};
-  \node (pro4) [process, right of=pro3, xshift=3cm, text width=3cm,
-    yshift=1.1cm] {Assign by MC using pH};
-  \node (pro5) [process, below of=dec1, text width=3cm, yshift=-1.5cm]
-    {Rebuild PSF and coordinates};
-  \node (pro6) [process, left of=pro5, text width=3cm, xshift=-3cm]
-    {Build MC move set};
-  \node (pro7) [process, left of=pro6, text width=3cm, xshift=-3cm]
-    {Minimize};
-  \node (pro8) [process, below of=pro7, text width=3cm, yshift=-0.5cm]
-    {Select residue(s)};
-  \node (dec2) [decision, right of=pro8, text width=3cm, xshift=3cm,
-    inner sep=-5pt] {Inherent pKa step};
-  \node (dec3) [decision, below of=dec2, text width=3cm, yshift=-1.75cm,
-    inner sep=-4pt] {Max attempts reached?};
-  \node (pro9) [process, right of=dec2, text width=4.2cm, xshift=3.5cm,
-    align=left]
-    {neMD/MC\\
-     accept $\rightarrow$ continue\\
-     reject $\rightarrow$ revert \& cont.\\
-     (see Figure~\ref{fig:namdcph_nemdmc})
-    };
-  \node (pro10) [process, below of=pro9, text width=3cm, yshift=-5.2cm]
-    {Run MD};
-  \node (dec4) [decision, left of=pro10, text width=3cm, xshift=-3.5cm,
-    inner sep=-5pt] {Max cycles reached?};
-  \node (stop) [startstop, below of=dec4, yshift=-1cm] {Stop};
-
-  \draw [arrow] (start) -- (in1);
-  \draw [arrow] (in1) -- (pro1);
-  \draw [arrow] (pro1) -- (pro2);
-  \draw [arrow] (pro2) -- (pro3);
-  \draw [arrow] (pro3.east) -- (dec1.west);
-  \draw [arrow] (dec1) -- node[anchor=west] {no} (pro4);
-  \draw [arrow] (pro4.east) -- ++(0.5cm,0) -- ++(0,-6.5cm) -- (pro5.east);
-  \draw [arrow] (dec1) -- node[anchor=west] {yes} (pro5);
-  \draw [arrow] (pro5) -- (pro6);
-  \draw [arrow] (pro6) -- (pro7);
-  \draw [arrow] (pro7) -- (pro8);
-  \draw [arrow] (pro8) -- (dec2);
-  \draw [arrow] (dec2) -- node[anchor=west, xshift=0.2cm] {reject} (dec3);
-  \draw [arrow] (dec2) -- node[anchor=south] {accept} (pro9);
-  \draw [arrow] (dec3) -| node[anchor=south, xshift=2cm] {no} (pro8);
-  \draw [arrow] (dec3) -| node[anchor=south, xshift=-2cm] {yes} (pro10);
-  \draw [arrow] (pro9) -- (pro10);
-  \draw [arrow] (pro10) -- (dec4);
-  \draw [arrow] (dec4) -| node[anchor=south, xshift=2cm] {no} (pro8);
-  \draw [arrow] (dec4) -- node[anchor=west, xshift=0.2cm] {yes} (stop);
-\end{tikzpicture}
+  \includegraphics[width=0.9\textwidth]{figures/namdcph_flowchart}
 \end{center}
 
 \newpage
