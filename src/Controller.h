@@ -110,28 +110,17 @@ protected:
       BigReal goTotalEnergy;
 //fepb
       BigReal bondedEnergyDiff_f;
-      BigReal bondedEnergyDiff_r;
       BigReal electEnergy_f;
-      BigReal electEnergy_r;
       BigReal electEnergySlow_f;
-      BigReal electEnergySlow_r;
       BigReal ljEnergy_f;
-      BigReal ljEnergy_r;
       BigReal ljEnergy_f_left;  // used by WCA repulsive, [s1,s2]
-      BigReal exp_dE_ByRT_f;
-      BigReal exp_dE_ByRT_r;
-      BigReal dE_f;
-      BigReal dE_r;
-      BigReal dE_avg_f;
-      BigReal dE_avg_r;
-      BigReal net_dE_f;
-      BigReal net_dE_r;
-      BigReal dG_f;
-      BigReal dG_r;
+      BigReal exp_dE_ByRT;
+      BigReal dE;
+      BigReal net_dE;
+      BigReal dG;
       int FepNo;
       void printFepMessage(int);
-      BigReal fepSum_f;
-      BigReal fepSum_r;
+      BigReal fepSum;
 //fepe
       BigReal bondedEnergy_ti_1;
       BigReal bondedEnergy_ti_2;

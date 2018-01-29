@@ -4277,7 +4277,6 @@ void ComputePmeMgr::submitReductions() {
       reduction->item(REDUCTION_VIRIAL_SLOW_ZZ) += evir[g][6] * scale;
 
       float scale2 = 0.;
-      float scale3 = 0.;
 
       // why is this declared/defined again here?
       SimParameters *simParams = Node::Object()->simParameters;
@@ -4313,39 +4312,6 @@ void ComputePmeMgr::submitReductions() {
       	else if( g==3 )	scale2 = scale + 1.0;
       }
       reduction->item(REDUCTION_ELECT_ENERGY_SLOW_F) += evir[g][0] * scale2;
-
-      //DoubleWide FEP: Backward calculation
-      if (alchFepOn) {
-      	BigReal elecLambda3Up=0.0, elecLambda3Down=0.0;
-        if(simParams->alchFepWhamOn) {
-          if(simParams->alchFepElecOn) {
-            elecLambda3Up = simParams->alchLambda3();
-            elecLambda3Down =  1.0 - simParams->alchLambda3();
-          }
-          else {
-            elecLambda3Up = 0.0;
-            elecLambda3Down =  1.0;
-          }
-        }
-        else {
-          elecLambda3Up = simParams->getElecLambda(simParams->alchLambda3());
-          elecLambda3Down = simParams->getElecLambda(1.-simParams->alchLambda3());
-        }
-        
-        if ( g == 0 ) scale3 = elecLambda3Up;
-        else if ( g == 1 ) scale3 = elecLambda3Down;
-        else if ( g == 2 ) scale3 = (elecLambda3Up + elecLambda3Down - 1)*(-1);
-        if (alchDecouple && g == 2 ) scale3 = 1 - elecLambda3Up;
-        else if (alchDecouple && g == 3 ) scale3 = 1 - elecLambda3Down;
-        else if (alchDecouple && g == 4 ) scale3 = (elecLambda3Up + elecLambda3Down - 1)*(-1);
-      }
-      if(simParams->alchFepWhamOn && simParams->alchFepElecOn)	{	// FEP with wham post-process
-      	if( g==0 )	scale3 = scale + 1.0;
-      	else if( g==1 )	scale3 = scale - 1.0;
-      	else if( g==2 )	scale3 = scale - 1.0;
-      	else if( g==3 )	scale3 = scale + 1.0;
-      }
-      reduction->item(REDUCTION_ELECT_ENERGY_SLOW_R) += evir[g][0] * scale3;
       
       if (alchThermIntOn) {
         

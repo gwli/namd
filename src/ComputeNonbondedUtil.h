@@ -268,9 +268,6 @@ public:
 	 electEnergyIndex_s, fullElectEnergyIndex_s, vdwEnergyIndex_s, vdwEnergyIndex_s_Left,
 	 electEnergyIndex_ti_1, fullElectEnergyIndex_ti_1, vdwEnergyIndex_ti_1,
 	 electEnergyIndex_ti_2, fullElectEnergyIndex_ti_2, vdwEnergyIndex_ti_2,
-	 electEnergyIndex_s_reverse,
-	 fullElectEnergyIndex_s_reverse,
-	 vdwEnergyIndex_s_reverse,
 //sd-de
 	 TENSOR(virialIndex), TENSOR(fullElectVirialIndex),
          VECTOR(pairVDWForceIndex), VECTOR(pairElectForceIndex),
@@ -359,7 +356,6 @@ public:
   static Bool alchFepOn;
   static Bool alchThermIntOn;
   static BigReal alchLambda2;
-  static BigReal alchLambda3;
   static BigReal alchVdwShiftCoeff;
   static Bool vdwForceSwitching;
   static Bool LJcorrection;

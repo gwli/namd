@@ -7058,12 +7058,4 @@ BigReal SimParameters::getBondLambda(const BigReal lambda) {
   // Convenience function for staggered lambda scaling
   return (lambda >= alchBondLambdaEnd ? 1. : lambda / alchBondLambdaEnd);
 }
-
-//DoubleWide FEP
-BigReal SimParameters::alchLambda3(void) {
-  BigReal tmp = alchLambda - (alchLambda2 - alchLambda);
-  if (tmp < 0) tmp = 0;
-  if (tmp == alchLambda && alchLambda != 0) tmp = tmp - 0.02;
-  return tmp;
-}
 //fepe
