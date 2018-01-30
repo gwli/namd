@@ -19,6 +19,7 @@
 
 #include "InfoStream.h"
 #include "ComputeNonbondedUtil.h"
+#include "ComputePme.h"
 #include "ConfigList.h"
 #include "SimParameters.h"
 #include "ParseOptions.h"
@@ -286,6 +287,7 @@ void SimParameters::scriptSet(const char *param, const char *value) {
     alchFepOn = alchOn && alchFepOnAtStartup;
     alchThermIntOn = alchOn && alchThermIntOnAtStartup;
     ComputeNonbondedUtil::select();
+    if ( PMEOn ) ComputePmeUtil::select();
     return;
   }
   SCRIPT_PARSE_INT("alchEquilSteps",alchEquilSteps)
@@ -374,6 +376,10 @@ void SimParameters::scriptSet(const char *param, const char *value) {
 
 void SimParameters::nonbonded_select() {
     ComputeNonbondedUtil::select();
+}
+
+void SimParameters::pme_select() {
+  ComputePmeUtil::select();
 }
 
 /************************************************************************/

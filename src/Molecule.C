@@ -9659,6 +9659,9 @@ void Molecule::compute_LJcorrection() {
   delete [] ATable;
   delete [] BTable;
 
+  LJAvgA = sumOfAs / count;
+  LJAvgB = sumOfBs / count;
+
   /*If alchemical interactions exist, account for interactions that disappear
     at the endpoints. Since alchemical transformations are path independent,
     the intermediate values can be treated fairly arbitrarily.  IMO, the
@@ -9671,7 +9674,7 @@ void Molecule::compute_LJcorrection() {
     alternative would be to count "fractional interactions," but that makes
     TI derivatives a bit harder and for no obvious gain.
   */
-  if (simParams->alchOn) {
+  if (simParams->alchOn && simParams->alchVdwLambdaEnd) {
     BigReal sumOfAs1 = sumOfAs;
     BigReal sumOfAs2 = sumOfAs;
     BigReal sumOfBs1 = sumOfBs;
@@ -9771,20 +9774,13 @@ void Molecule::compute_LJcorrection() {
       iout << iINFO << "LONG-RANGE LJ: AVERAGE A1 AND B1 COEFFICIENTS "
            << LJAvgA1 << " AND " << LJAvgB1 << "\n" << endi;
     }
-
-    // Pre-scale by the atom counts, as they differ from when alchemy is off.
     LJAvgA1 *= BigReal(numLJsites1)*numLJsites1; 
     LJAvgB1 *= BigReal(numLJsites1)*numLJsites1;
     LJAvgA2 *= BigReal(numLJsites2)*numLJsites2;
     LJAvgB2 *= BigReal(numLJsites2)*numLJsites2;
-
-    LJAvgA = LJAvgA2;
-    LJAvgB = LJAvgB2;
   }
   else{
     LJAvgA1 = LJAvgB1 = LJAvgA2 = LJAvgB2 = 0;
-    LJAvgA = sumOfAs / count;
-    LJAvgB = sumOfBs / count;
 
     if ( ! CkMyPe() ) {
       iout << iINFO << "LONG-RANGE LJ: APPLYING ANALYTICAL CORRECTIONS TO "
@@ -9792,11 +9788,9 @@ void Molecule::compute_LJcorrection() {
       iout << iINFO << "LONG-RANGE LJ: AVERAGE A AND B COEFFICIENTS "
            << LJAvgA << " AND " << LJAvgB << "\n" << endi;
     }
-
-    // Pre-scale by the atom counts, as they differ from when alchemy is on.
-    LJAvgA *= BigReal(numLJsites)*numLJsites;
-    LJAvgB *= BigReal(numLJsites)*numLJsites;
   }
+  LJAvgA *= BigReal(numLJsites)*numLJsites;
+  LJAvgB *= BigReal(numLJsites)*numLJsites;
 
   BigReal rcut = simParams->cutoff;
   BigReal rcut2 = rcut*rcut;
@@ -9866,23 +9860,22 @@ void Molecule::compute_LJcorrection() {
     int_U_gofr_A = 2*PI / (9*rcut9);
     int_U_gofr_B = -2*PI / (3*rcut3);
   }
-  // If TI/FEP is on, these come back with values at alchLambda = 0 and are
-  // thus equivalent to alchemical group 2.
+  // For alchOn, these represent all atoms, with no sorting by group.
   tail_corr_virial = int_rF_gofr_A*LJAvgA + int_rF_gofr_B*LJAvgB;
   tail_corr_ener = int_U_gofr_A*LJAvgA + int_U_gofr_B*LJAvgB;
 
   tail_corr_dUdl_1 = int_U_gofr_A*LJAvgA1 + int_U_gofr_B*LJAvgB1;
   tail_corr_virial_1 = int_rF_gofr_A*LJAvgA1 + int_rF_gofr_B*LJAvgB1;
+  tail_corr_dUdl_2 = int_U_gofr_A*LJAvgA2 + int_U_gofr_B*LJAvgB2;
+  tail_corr_virial_2 = int_rF_gofr_A*LJAvgA2 + int_rF_gofr_B*LJAvgB2;
 }
 
 // Convenience function to simplify lambda scaling.
 BigReal Molecule::getEnergyTailCorr(const BigReal alchLambda){
-  if (simParams->alchOn) {
+  if (simParams->alchOn && simParams->alchVdwLambdaEnd) {
     const BigReal vdw_lambda_1 = simParams->getVdwLambda(alchLambda);
     const BigReal vdw_lambda_2 = simParams->getVdwLambda(1-alchLambda);
-    // NB: Rather than duplicate variables, dUdl_2 is stored as the energy.
-    //     Put another way, dUdl_2 _is_ the energy, if alchLambda = 0.
-    return vdw_lambda_1*tail_corr_dUdl_1 + vdw_lambda_2*tail_corr_ener;
+    return vdw_lambda_1*tail_corr_dUdl_1 + vdw_lambda_2*tail_corr_dUdl_2;
   }
   else {
     return tail_corr_ener;
@@ -9891,12 +9884,10 @@ BigReal Molecule::getEnergyTailCorr(const BigReal alchLambda){
 
 // Convenience function to simplify lambda scaling.
 BigReal Molecule::getVirialTailCorr(const BigReal alchLambda){
-  if (simParams->alchOn) {
+  if (simParams->alchOn && simParams->alchVdwLambdaEnd) {
     const BigReal vdw_lambda_1 = simParams->getVdwLambda(alchLambda);
     const BigReal vdw_lambda_2 = simParams->getVdwLambda(1-alchLambda);
-    // NB: Rather than duplicate variables, virial_2 is stored as the virial.
-    //     Put another way, virial_2 _is_ the virial, if alchLambda = 0.
-    return vdw_lambda_1*tail_corr_virial_1 + vdw_lambda_2*tail_corr_virial;
+    return vdw_lambda_1*tail_corr_virial_1 + vdw_lambda_2*tail_corr_virial_2;
   }
   else {
     return tail_corr_virial;

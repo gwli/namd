@@ -33,14 +33,20 @@ private:
 	int nomergegrids;
 	int nostreaming;
 
-	// Number of devices on this node
+	// Number of devices on this physical node
 	int deviceCount;
 
-	// Number of devices on this node that are used for computation
+	// Number of devices on this physical node that are used for computation
 	int ndevices;
 
-	// List of device IDs that are used for computation
+	// List of device IDs on this physical node that are used for computation
 	int *devices;
+
+	// Number of devices that are used for computation by this node
+	int nnodedevices;
+
+	// List of device IDs that are used for computation by this node
+	int *nodedevices;
 
 	// True when GPU is shared between PEs
 	bool sharedGpu;
@@ -70,7 +76,7 @@ public:
 	void initialize();
 
 	int getDeviceCount() {return deviceCount;}
-	int getNumDevice() {return ndevices;}
+	int getNumDevice() {return nnodedevices;}
 
 	bool device_shared_with_pe(int pe);
 	bool one_device_per_node();
@@ -90,7 +96,7 @@ public:
 	void setGpuIsMine(const int val) {gpuIsMine = val;}
 
 	int getDeviceID() {return deviceID;}
-	int getDeviceIDbyRank(int rank) {return devices[rank];}
+	int getDeviceIDbyRank(int rank) {return nodedevices[rank];}
 	int getDeviceIDforPe(int pe);
 	int getMasterPeForDeviceID(int deviceID);
 

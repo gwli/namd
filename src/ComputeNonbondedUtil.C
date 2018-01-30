@@ -338,10 +338,6 @@ void ComputeNonbondedUtil::select(void)
 #ifdef NAMD_CUDA
     NAMD_die("drudeNbthole is not supported in CUDA version");
 #endif
-    if ( alchFepOn )
-      NAMD_die("drudeNbthole is not supported with alchemical free-energy perturbation");
-    if ( alchThermIntOn )
-      NAMD_die("drudeNbthole is not supported with alchemical thermodynamic integration");
     if ( lesOn )
       NAMD_die("drudeNbthole is not supported with locally enhanced sampling");
     if ( pairInteractionOn )

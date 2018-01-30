@@ -46,7 +46,8 @@ public:
     return 0x7FFFFFFF &((atomID[0]<<24) + (atomID[1]<<16) + (atomID[2]<<8) + atomID[3]);
   }
 
-  enum { tholeEnergyIndex, TENSOR(virialIndex), reductionDataSize };
+  enum { tholeEnergyIndex, tholeEnergyIndex_f, tholeEnergyIndex_ti_1,
+         tholeEnergyIndex_ti_2, TENSOR(virialIndex), reductionDataSize };
   enum { reductionChecksumLabel = REDUCTION_THOLE_CHECKSUM };
   static void submitReductionData(BigReal*,SubmitReduction*);
 

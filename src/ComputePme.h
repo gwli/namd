@@ -21,7 +21,29 @@ class PmeGridMsg;
 class ComputePmeMgr;
 class Patch;
 
-class ComputePme : public Compute {
+class ComputePmeUtil {
+
+public:
+
+  ComputePmeUtil() {};
+  ~ComputePmeUtil() {}
+  static void select(void);
+
+  static int numGrids;
+  static Bool alchOn;
+  static Bool alchFepOn;
+  static Bool alchThermIntOn;
+  static Bool alchDecouple;
+  static BigReal alchElecLambdaStart;
+  static Bool lesOn;
+  static int lesFactor;
+  static Bool pairOn; // alias for pairInteractionOn
+  static Bool selfOn; // alias for pairInteractionSelf
+
+};
+
+
+class ComputePme : public Compute, public ComputePmeUtil {
 public:
   ComputePme(ComputeID c, PatchID pid);
   virtual ~ComputePme();
@@ -48,10 +70,8 @@ public:
   Box<Patch,Results> *forceBox;
 
   PmeGrid myGrid;
-  int alchOn, alchFepOn, alchThermIntOn, lesOn, lesFactor, pairOn, selfOn, numGrids;
-  int alchDecouple;
+  int numGridsMax; // Only used for deallocating arrays
   int offload;
-  BigReal alchElecLambdaStart;
   
   Bool qmForcesOn;
   

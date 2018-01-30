@@ -43,6 +43,18 @@ void AnisoElem::computeForce(AnisoElem *tuples, int ntuple, BigReal *reduction,
 {
  const Lattice & lattice = tuples[0].p[0]->p->lattice;
 
+ //fepb BKR
+ SimParameters *const simParams = Node::Object()->simParameters;
+ const int step = tuples[0].p[0]->p->flags.step;
+ const BigReal alchLambda = simParams->getCurrentLambda(step);
+ const BigReal alchLambda2 = simParams->alchLambda2;
+ const BigReal bond_lambda_1 = simParams->getBondLambda(alchLambda);
+ const BigReal bond_lambda_2 = simParams->getBondLambda(1-alchLambda);
+ const BigReal bond_lambda_12 = simParams->getBondLambda(alchLambda2);
+ const BigReal bond_lambda_22 = simParams->getBondLambda(1-alchLambda2);
+ Molecule *const mol = Node::Object()->molecule;
+ //fepe
+
  for ( int ituple=0; ituple<ntuple; ++ituple ) {
   const AnisoElem &tup = tuples[ituple];
   enum { size = 4 };
@@ -107,6 +119,30 @@ void AnisoElem::computeForce(AnisoElem *tuples, int ntuple, BigReal *reduction,
   Vector fm = kperp0 * dperp * dperp * r_mn_invlen * u2;
   fm -= kperp0 * dperp * r_mn_invlen * dr;
 
+  //fepb - BKR scaling of alchemical bonded terms
+  //       NB: TI derivative is the _unscaled_ energy.
+  if ( simParams->alchOn ) {
+    switch ( mol->get_fep_bonded_type(atomID, 4) ) {
+    case 1:
+      reduction[anisoEnergyIndex_ti_1] += eaniso;
+      reduction[anisoEnergyIndex_f] += (bond_lambda_12 - bond_lambda_1)*eaniso;
+      eaniso *= bond_lambda_1;
+      fj *= bond_lambda_1;
+      fl *= bond_lambda_1;
+      fm *= bond_lambda_1;
+      break;
+    case 2:
+      reduction[anisoEnergyIndex_ti_2] += eaniso;
+      reduction[anisoEnergyIndex_f] += (bond_lambda_22 - bond_lambda_2)*eaniso;
+      eaniso *= bond_lambda_2;
+      fj *= bond_lambda_2;
+      fl *= bond_lambda_2;
+      fm *= bond_lambda_2; 
+      break;
+    }
+  }
+  //fepe
+
   // accumulate forces
   p[0]->f[localIndex[0]] -= (fj + fl);
   p[0]->f[localIndex[0]+1] += fj;
@@ -170,6 +206,9 @@ void AnisoElem::computeForce(AnisoElem *tuples, int ntuple, BigReal *reduction,
 void AnisoElem::submitReductionData(BigReal *data, SubmitReduction *reduction)
 {
   reduction->item(REDUCTION_BOND_ENERGY) += data[anisoEnergyIndex];
+  reduction->item(REDUCTION_BONDED_ENERGY_F) += data[anisoEnergyIndex_f];
+  reduction->item(REDUCTION_BONDED_ENERGY_TI_1) += data[anisoEnergyIndex_ti_1];
+  reduction->item(REDUCTION_BONDED_ENERGY_TI_2) += data[anisoEnergyIndex_ti_2];
   ADD_TENSOR(reduction,REDUCTION_VIRIAL_NORMAL,data,virialIndex);
 }
 

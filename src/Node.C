@@ -474,7 +474,8 @@ void Node::startup() {
     molecule = node_molecule;
 
     SimParameters::nonbonded_select();
-    
+    if ( simParameters->PMEOn ) SimParameters::pme_select();   
+ 
     #if !CMK_SMP || ! USE_CKLOOP
     //the CkLoop library should be only used in SMP mode
     simParameters->useCkLoop = 0;
@@ -1060,6 +1061,7 @@ void Node::resendMolecule() {
   node_parameters = parameters;
   node_molecule = molecule;
   SimParameters::nonbonded_select();
+  if ( simParameters->PMEOn ) SimParameters::pme_select();
   computeMgr->sendBuildCudaExclusions();
   CProxy_Node nodeProxy(thisgroup);
   for ( int i=0; i<CmiMyNodeSize(); ++i ) {

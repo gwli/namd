@@ -43,6 +43,19 @@ void TholeElem::computeForce(TholeElem *tuples, int ntuple, BigReal *reduction,
 {
  const Lattice & lattice = tuples[0].p[0]->p->lattice;
 
+ //fepb BKR
+ SimParameters *const simParams = Node::Object()->simParameters;
+ const int step = tuples[0].p[0]->p->flags.step;
+ const BigReal alchLambda = simParams->getCurrentLambda(step);
+ const BigReal alchLambda2 = simParams->alchLambda2;
+ const BigReal elec_lambda_1 = simParams->getElecLambda(alchLambda);
+ const BigReal elec_lambda_2 = simParams->getElecLambda(1-alchLambda);
+ const BigReal elec_lambda_12 = simParams->getElecLambda(alchLambda2);
+ const BigReal elec_lambda_22 = simParams->getElecLambda(1-alchLambda2);
+ Molecule *const mol = Node::Object()->molecule;
+ //fepe
+
+
  for ( int ituple=0; ituple<ntuple; ++ituple ) {
   const TholeElem &tup = tuples[ituple];
   enum { size = 4 };
@@ -124,6 +137,38 @@ void TholeElem::computeForce(TholeElem *tuples, int ntuple, BigReal *reduction,
   Vector fda = -dfda * rda;
   Vector fdd = -dfdd * rdd;
 
+  //fepb - BKR scaling of alchemical drude terms
+  //       NB: TI derivative is the _unscaled_ energy.
+  if ( simParams->alchOn ) {
+    // THIS ASSUMES THAT AN ATOM AND ITS DRUDE PARTICLE ARE ALWAYS IN THE SAME
+    // PARTITION!
+    int typeSum = 0;
+    typeSum += (mol->get_fep_type(atomID[0]) == 2 ? -1 :\
+        mol->get_fep_type(atomID[0]));
+    typeSum += (mol->get_fep_type(atomID[2]) == 2 ? -1 :\
+        mol->get_fep_type(atomID[2]));
+    int order = (!simParams->alchDecouple ? 3 : 2);
+
+    if ( 0 < typeSum && typeSum < order ) {
+      reduction[tholeEnergyIndex_ti_1] += ethole;
+      reduction[tholeEnergyIndex_f] += elec_lambda_12*ethole;
+      ethole *= elec_lambda_1;
+      faa *= elec_lambda_1;
+      fad *= elec_lambda_1;
+      fda *= elec_lambda_1;
+      fdd *= elec_lambda_1; 
+    } else if ( 0 > typeSum && typeSum > -order ) {
+      reduction[tholeEnergyIndex_ti_2] += ethole;
+      reduction[tholeEnergyIndex_f] += elec_lambda_22*ethole;
+      ethole *= elec_lambda_2;
+      faa *= elec_lambda_2;
+      fad *= elec_lambda_2;
+      fda *= elec_lambda_2;
+      fdd *= elec_lambda_2;
+    }
+  }
+  //fepe
+
   p[0]->f[localIndex[0]] += faa + fad;
   p[1]->f[localIndex[1]] += fda + fdd;
   p[2]->f[localIndex[2]] -= faa + fda;
@@ -194,6 +239,9 @@ void TholeElem::computeForce(TholeElem *tuples, int ntuple, BigReal *reduction,
 void TholeElem::submitReductionData(BigReal *data, SubmitReduction *reduction)
 {
   reduction->item(REDUCTION_ELECT_ENERGY) += data[tholeEnergyIndex];
+  reduction->item(REDUCTION_ELECT_ENERGY_F) += data[tholeEnergyIndex_f];
+  reduction->item(REDUCTION_ELECT_ENERGY_TI_1) += data[tholeEnergyIndex_ti_1];
+  reduction->item(REDUCTION_ELECT_ENERGY_TI_2) += data[tholeEnergyIndex_ti_2];
   ADD_TENSOR(reduction,REDUCTION_VIRIAL_NORMAL,data,virialIndex);
 }
 

@@ -93,6 +93,17 @@ extern __thread DeviceCUDA *deviceCUDA;
 #define USE_NODE_PAR_RECEIVE    1
 #endif
 
+int ComputePmeUtil::numGrids;
+Bool ComputePmeUtil::alchOn;
+Bool ComputePmeUtil::alchFepOn;
+Bool ComputePmeUtil::alchThermIntOn;
+Bool ComputePmeUtil::alchDecouple;
+BigReal ComputePmeUtil::alchElecLambdaStart;
+Bool ComputePmeUtil::lesOn;
+int ComputePmeUtil::lesFactor;
+Bool ComputePmeUtil::pairOn;
+Bool ComputePmeUtil::selfOn;
+
 char *pencilPMEProcessors;
 
 class PmeAckMsg : public CMessage_PmeAckMsg {
@@ -341,7 +352,7 @@ struct ijpair_sortop_bit_reversed {
   }
 };
 
-class ComputePmeMgr : public CBase_ComputePmeMgr {
+class ComputePmeMgr : public CBase_ComputePmeMgr, public ComputePmeUtil {
 public:
   friend class ComputePme;
   friend class NodePmeMgr;
@@ -482,10 +493,7 @@ private:
 #endif
 
   int qsize, fsize, bsize;
-  int alchOn, alchFepOn, alchThermIntOn, lesOn, lesFactor, pairOn, selfOn, numGrids;
-  int alchDecouple;
   int offload;
-  BigReal alchElecLambdaStart;
   BigReal alchLambda;  // set on each step in ComputePme::ungridForces()
 
   float **q_arr;
@@ -890,31 +898,7 @@ void ComputePmeMgr::initialize(CkQdMsg *msg) {
 #endif
 
   alchLambda = -1.;  // illegal value to catch if not updated
-
-  alchOn = simParams->alchOn;
-  alchFepOn = simParams->alchFepOn;
-  alchThermIntOn = simParams->alchThermIntOn;
-  alchDecouple = alchOn && simParams->alchDecouple;
-  alchElecLambdaStart = alchOn ? simParams->alchElecLambdaStart : 0;
-  if (alchOn) {
-    numGrids = 2;
-    if (alchDecouple) numGrids += 2;
-    if (alchElecLambdaStart || alchThermIntOn) numGrids ++;
-  }
-  else numGrids = 1;
-  lesOn = simParams->lesOn;
   useBarrier = simParams->PMEBarrier;
-  if ( lesOn ) {
-    lesFactor = simParams->lesFactor;
-    numGrids = lesFactor;
-  }
-  selfOn = 0;
-  pairOn = simParams->pairInteractionOn;
-  if ( pairOn ) {
-    selfOn = simParams->pairInteractionSelf;
-    if ( selfOn ) pairOn = 0;  // make pairOn and selfOn exclusive
-    numGrids = selfOn ? 1 : 3;
-  }
 
   if ( numGrids != 1 || simParams->PMEPencils == 0 ) usePencils = 0;
   else if ( simParams->PMEPencils > 0 ) usePencils = 1;
@@ -2359,7 +2343,6 @@ void ComputePmeMgr::gridCalc3(void) {
 
   // finish backward FFT
 #ifdef NAMD_FFTW
-
   for ( int g=0; g<numGrids; ++g ) {
 #ifdef NAMD_FFTW_3
     fftwf_execute(backward_plan_yz[g]);
@@ -2678,30 +2661,7 @@ ComputePme::ComputePme(ComputeID c, PatchID pid) : Compute(c), patchID(pid)
   qmForcesOn =  simParams->qmForcesOn;
   offload = simParams->PMEOffload;
 
-  alchOn = simParams->alchOn;
-  alchFepOn = simParams->alchFepOn;
-  alchThermIntOn = simParams->alchThermIntOn;
-  alchDecouple = alchOn && simParams->alchDecouple;
-  alchElecLambdaStart = alchOn ? simParams->alchElecLambdaStart : 0;
-            
-  if (alchOn) {
-    numGrids = 2;
-    if (alchDecouple) numGrids += 2;
-    if (alchElecLambdaStart || alchThermIntOn) numGrids ++;
-  }
-  else numGrids = 1;
-  lesOn = simParams->lesOn;
-  if ( lesOn ) {
-    lesFactor = simParams->lesFactor;
-    numGrids = lesFactor;
-  }
-  selfOn = 0;
-  pairOn = simParams->pairInteractionOn;
-  if ( pairOn ) {
-    selfOn = simParams->pairInteractionSelf;
-    if ( selfOn ) pairOn = 0;  // make pairOn and selfOn exclusive
-    numGrids = selfOn ? 1 : 3;
-  }
+  numGridsMax = numGrids;
 
   myGrid.K1 = simParams->PMEGridSizeX;
   myGrid.K2 = simParams->PMEGridSizeY;
@@ -2966,7 +2926,7 @@ ComputePme::~ComputePme()
   if ( ! offload )
 #endif
   {
-    for ( int g=0; g<numGrids; ++g ) delete myRealSpace[g];
+    for ( int g=0; g<numGridsMax; ++g ) delete myRealSpace[g];
   }
 }
 
@@ -4029,6 +3989,7 @@ void ComputePme::ungridForces() {
     localResults_alloc.resize(numLocalAtoms* ((numGrids>1 || selfOn)?2:1));
     Vector *localResults = localResults_alloc.begin();
     Vector *gridResults;
+
     if ( alchOn || lesOn || selfOn || pairOn ) {
       for(int i=0; i<numLocalAtoms; ++i) { localResults[i] = 0.; }
       gridResults = localResults + numLocalAtoms;
@@ -6555,6 +6516,36 @@ void PmeZPencil::node_process_untrans(PmeUntransMsg *msg)
 #endif
 }
 
+void ComputePmeUtil::select(void)
+{
+  if ( CkMyRank() ) return;
+  
+  SimParameters *simParams = Node::Object()->simParameters;
+
+  alchOn = simParams->alchOn;
+  alchFepOn = simParams->alchFepOn;
+  alchThermIntOn = simParams->alchThermIntOn;
+  alchDecouple = alchOn && simParams->alchDecouple;
+  alchElecLambdaStart = alchOn ? simParams->alchElecLambdaStart : 0; 
+  lesOn = simParams->lesOn;
+  lesFactor = simParams->lesFactor;
+  pairOn = simParams->pairInteractionOn;
+  selfOn = simParams->pairInteractionSelf;
+
+  if ( alchOn ) {
+    numGrids = 2;
+    if (alchDecouple) numGrids += 2;
+    if (alchElecLambdaStart || alchThermIntOn) numGrids++;
+  } else if ( lesOn ) {
+    numGrids = lesFactor;
+  } else if ( pairOn ) {
+    if ( selfOn ) pairOn = 0;  // make pairOn and selfOn exclusive
+    numGrids = (selfOn ? 1 : 3);
+  } else {
+    numGrids = 1;
+  }
+
+}
 
 #include "ComputePmeMgr.def.h"
 

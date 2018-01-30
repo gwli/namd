@@ -2992,15 +2992,18 @@ void Controller::printEnergies(int step, int minimize)
 #else
       // Apply tail correction to energy.
       BigReal alchLambda = simParameters->getCurrentLambda(step);
-      BigReal alchLambda2 = simParameters->alchLambda2;
-
       ljEnergy += molecule->getEnergyTailCorr(alchLambda) / volume;
-      ljEnergy_f += molecule->getEnergyTailCorr(alchLambda2) / volume;
-      ljEnergy_f_left += molecule->getEnergyTailCorr(alchLambda2) / volume;
-      ljEnergy_ti_1 += molecule->tail_corr_dUdl_1 / volume;
-      // NB: Rather than duplicate variables, dUdl_2 is stored as the energy.
-      //     Put another way, dUdl_2 _is_ the energy if alchLambda = 0.
-      ljEnergy_ti_2 += molecule->tail_corr_ener / volume;
+
+      if (simParameters->alchOn) {
+        BigReal alchLambda2 = simParameters->alchLambda2;
+        if (simParameters->alchFepOn) {
+          ljEnergy_f += molecule->getEnergyTailCorr(alchLambda2) / volume;
+        } else if (simParameters->alchThermIntOn && 
+                   simParameters->alchVdwLambdaEnd) {
+          ljEnergy_ti_1 += molecule->tail_corr_dUdl_1 / volume;
+          ljEnergy_ti_2 += molecule->tail_corr_dUdl_2 / volume;
+        }
+      }
 #endif
     }
 

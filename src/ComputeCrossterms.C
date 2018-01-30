@@ -54,6 +54,17 @@ void CrosstermElem::computeForce(CrosstermElem *tuples, int ntuple, BigReal *red
                                 BigReal *pressureProfileData)
 {
  const Lattice & lattice = tuples[0].p[0]->p->lattice;
+ //fepb BKR
+ SimParameters *const simParams = Node::Object()->simParameters;
+ const int step = tuples[0].p[0]->p->flags.step;
+ const BigReal alchLambda = simParams->getCurrentLambda(step);
+ const BigReal alchLambda2 = simParams->alchLambda2;
+ const BigReal bond_lambda_1 = simParams->getBondLambda(alchLambda);
+ const BigReal bond_lambda_2 = simParams->getBondLambda(1-alchLambda);
+ const BigReal bond_lambda_12 = simParams->getBondLambda(alchLambda2);
+ const BigReal bond_lambda_22 = simParams->getBondLambda(1-alchLambda2);
+ Molecule *const mol = Node::Object()->molecule;
+ //fepe
 
  for ( int ituple=0; ituple<ntuple; ++ituple ) {
   const CrosstermElem &tup = tuples[ituple];
@@ -312,7 +323,7 @@ CkPrintf("%d %d-%d-%d-%d %d-%d-%d-%d\n", CkMyPe(),
 
     //  Add the energy from this crossterm to the total energy
     energy += U;
-
+    
     //  Next, we want to calculate the forces.  In order
     //  to do that, we first need to figure out whether the
     //  sin or cos form will be more stable.  For this,
@@ -421,6 +432,44 @@ CkPrintf("%d %d-%d-%d-%d %d-%d-%d-%d\n", CkMyPe(),
              +dsindE.y*r78.x - dsindE.x*r78.y);
     }
 
+    //fepb - BKR scaling of alchemical bonded terms
+    //       NB: TI derivative is the _unscaled_ energy.
+    if ( simParams->alchOn ) {
+      int typeSum1, typeSum2;
+      typeSum1 = typeSum2 = 0;
+      for (int i=0; i < 4; ++i ) {
+        typeSum1 += (mol->get_fep_type(atomID[i]) == 2 ? -1 :\
+            mol->get_fep_type(atomID[i]));
+        typeSum2 += (mol->get_fep_type(atomID[i+4]) == 2 ? -1 :\
+            mol->get_fep_type(atomID[i+4]));
+      }
+      int order = (simParams->alchBondDecouple ? 5 : 4);
+      if ( (0 < typeSum1 && typeSum1 < order) ||
+           (0 < typeSum2 && typeSum2 < order) ) {
+        reduction[crosstermEnergyIndex_ti_1] += energy;
+        reduction[crosstermEnergyIndex_f] += (bond_lambda_12 - bond_lambda_1)*energy;
+        energy *= bond_lambda_1;
+        f1 *= bond_lambda_1;
+        f2 *= bond_lambda_1;
+        f3 *= bond_lambda_1;
+        f4 *= bond_lambda_1;
+        f5 *= bond_lambda_1;
+        f6 *= bond_lambda_1;
+      } else if ( (0 > typeSum1 && typeSum1 > -order) ||
+                  (0 > typeSum2 && typeSum2 > -order) ) {
+        reduction[crosstermEnergyIndex_ti_2] += energy;
+        reduction[crosstermEnergyIndex_f] += (bond_lambda_22 - bond_lambda_2)*energy;
+        energy *= bond_lambda_2;
+        f1 *= bond_lambda_2;
+        f2 *= bond_lambda_2;
+        f3 *= bond_lambda_2;
+        f4 *= bond_lambda_2;
+        f5 *= bond_lambda_2;
+        f6 *= bond_lambda_2; 
+      }
+    }
+    //fepe
+
   /* store the forces */
   p[0]->f[localIndex[0]] += f1;
   p[1]->f[localIndex[1]] += f2 - f1;
@@ -524,6 +573,9 @@ CkPrintf("%d %d-%d-%d-%d %d-%d-%d-%d\n", CkMyPe(),
 void CrosstermElem::submitReductionData(BigReal *data, SubmitReduction *reduction)
 {
   reduction->item(REDUCTION_CROSSTERM_ENERGY) += data[crosstermEnergyIndex];
+  reduction->item(REDUCTION_BONDED_ENERGY_F) += data[crosstermEnergyIndex_f];
+  reduction->item(REDUCTION_BONDED_ENERGY_TI_1) += data[crosstermEnergyIndex_ti_1];
+  reduction->item(REDUCTION_BONDED_ENERGY_TI_2) += data[crosstermEnergyIndex_ti_2];
   ADD_TENSOR(reduction,REDUCTION_VIRIAL_NORMAL,data,virialIndex);
   ADD_TENSOR(reduction,REDUCTION_VIRIAL_AMD_DIHE,data,virialIndex);
 }

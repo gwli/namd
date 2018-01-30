@@ -46,7 +46,8 @@ public:
     return 0x7FFFFFFF &((atomID[0]<<24) + (atomID[1]<<16) + (atomID[2]<<8) + atomID[3]);
   }
 
-  enum { anisoEnergyIndex, TENSOR(virialIndex), reductionDataSize };
+  enum { anisoEnergyIndex, anisoEnergyIndex_f, anisoEnergyIndex_ti_1,
+         anisoEnergyIndex_ti_2, TENSOR(virialIndex), reductionDataSize };
   enum { reductionChecksumLabel = REDUCTION_ANISO_CHECKSUM };
   static void submitReductionData(BigReal*,SubmitReduction*);
 

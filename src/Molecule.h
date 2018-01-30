@@ -478,8 +478,8 @@ public:
   // data for tail corrections
   BigReal tail_corr_ener;
   BigReal tail_corr_virial;
-  BigReal tail_corr_dUdl_1;
-  BigReal tail_corr_virial_1;
+  BigReal tail_corr_dUdl_1, tail_corr_dUdl_2;
+  BigReal tail_corr_virial_1, tail_corr_virial_2;
   void compute_LJcorrection();
   BigReal getEnergyTailCorr(const BigReal);
   BigReal getVirialTailCorr(const BigReal);

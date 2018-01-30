@@ -766,7 +766,7 @@ void ComputePmeCUDAMgr::initialize_pencils(CkQdMsg *msg) {
     int nextra = n - ijPencilX.size();
     extraDevices.resize(nextra);
     for (int i=0;i < nextra;i++) {
-      extraDevices[i].deviceID = (i + ijPencilX.size())  % numDevicesTmp;
+      extraDevices[i].deviceID = deviceCUDA->getDeviceIDbyRank((i + ijPencilX.size()) % numDevicesTmp);
       cudaCheck(cudaSetDevice(extraDevices[i].deviceID));
       createStream(extraDevices[i].stream);
     }

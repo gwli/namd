@@ -43,7 +43,9 @@ public:
   int hash() const {
     return 0x7FFFFFFF &((atomID[0]<<24) + (atomID[1]<<16) + (atomID[2]<<8) + atomID[3]);
   }
-  enum { crosstermEnergyIndex, TENSOR(virialIndex), reductionDataSize };
+  enum { crosstermEnergyIndex, crosstermEnergyIndex_f,
+         crosstermEnergyIndex_ti_1, crosstermEnergyIndex_ti_2,
+         TENSOR(virialIndex), reductionDataSize };
   enum { reductionChecksumLabel = REDUCTION_CROSSTERM_CHECKSUM };
   static void submitReductionData(BigReal*,SubmitReduction*);
 

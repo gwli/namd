@@ -202,6 +202,21 @@ void DeviceCUDA::initialize() {
     delete [] olddevices;
   }
 
+  {
+    // build list of devices actually used by this node
+    nodedevices = new int[ndevices];
+    nnodedevices = 0;
+    int pe = CkNodeFirst(CkMyNode());
+    int dr = -1;
+    for ( int i=0; i<CkMyNodeSize(); ++i, ++pe ) {
+      int peDeviceRank = CmiPhysicalRank(pe) * ndevices / numPesOnPhysicalNode;
+      if ( peDeviceRank != dr ) {
+        dr = peDeviceRank;
+        nodedevices[nnodedevices++] = devices[dr];
+      }
+    }
+  }
+
   sharedGpu = 0;
   gpuIsMine = 1;
   int firstPeSharingGpu = CkMyPe();
@@ -263,25 +278,9 @@ void DeviceCUDA::initialize() {
     }
 
     // Store master PEs for every device ID to node-wide list
-    if (CkMyRank() >= MAX_NUM_DEVICES)
+    if (deviceID >= MAX_NUM_DEVICES)
       NAMD_die("Maximum number of CUDA devices (256) per node exceeded");
-    masterPeList[deviceID] = masterPe;
-    // Set masterPe values to -1 for devices that do not exist.
-    // Only master Pe with deviceID == devices[0] does the writing
-    if (deviceID == devices[0]) {
-      // For device IDs 0...deviceCount-1, check if it is in the devices[0...deviceCount-1]
-      for (int i=0;i < deviceCount;i++) {
-        bool deviceOK = false;
-        for (int j=0;j < deviceCount;j++) {
-          if (devices[j] == i) deviceOK = true;
-        }
-        if (!deviceOK) masterPeList[i] = -1;
-      }
-      // Device IDs deviceCount ... MAX_NUM_DEVICES are not possible, just set them to -1
-      for (int i=deviceCount;i < MAX_NUM_DEVICES;i++) {
-        masterPeList[i] = -1;
-      }
-    }
+    masterPeList[deviceID] = masterPe + 1;  // array is pre-initialized to zeros
 
     // disable token-passing but don't submit local until remote finished
     // if shared_gpu is true, otherwise submit all work immediately
@@ -346,7 +345,7 @@ int DeviceCUDA::getDeviceIDforPe(int pe) {
 // Returns master PE for the device ID, or -1 if device not found
 //
 int DeviceCUDA::getMasterPeForDeviceID(int deviceID) {
-  return masterPeList[deviceID % deviceCount];
+  return masterPeList[deviceID % deviceCount] - 1;
 }
 
 //
