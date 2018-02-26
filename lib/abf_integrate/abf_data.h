@@ -1,5 +1,12 @@
 /// \file integrate.h General headers for ABF_integrate
 
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 #include <iostream>
 #include <vector>
 
@@ -35,7 +42,7 @@ class ABFdata {
     /// from MtD bias or histogram in standard MC
     double *estimate;
 
-    /// Deviation between starting free energy gradient and 
+    /// Deviation between starting free energy gradient and
     /// estimated one
     double *deviation;
 
@@ -90,5 +97,5 @@ inline bool ABFdata::wrap(int &pos, int i)
 }
 
 inline bool ABFdata::allowed(unsigned int offset) {
-    return count[offset] > MIN_SAMPLES;
+    return count[offset] >= MIN_SAMPLES;
 }

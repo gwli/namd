@@ -998,11 +998,6 @@ void ComputePmeCUDADevice::initialize(PmeGrid& pmeGrid_in, int pencilIndexY_in, 
   int deviceID_in, int pmePencilType_in, CProxy_ComputePmeCUDAMgr mgrProxy_in,
   CProxy_PmeAtomFiler pmeAtomFiler_in) {
 
-#define CUDA_EVENT_SPREADCHARGE 90
-  traceRegisterUserEvent("CUDA spreadCharge", CUDA_EVENT_SPREADCHARGE);
-#define CUDA_EVENT_GATHERFORCE 91
-  traceRegisterUserEvent("CUDA gatherForce", CUDA_EVENT_GATHERFORCE);
-
   deviceID = deviceID_in;
   cudaCheck(cudaSetDevice(deviceID));
   pmePencilType = pmePencilType_in;
@@ -1417,7 +1412,7 @@ void ComputePmeCUDADevice::spreadCharge() {
 // After PME solver is done, we return here
 //
 void ComputePmeCUDADevice::gatherForce() {
-  traceUserBracketEvent(CUDA_EVENT_SPREADCHARGE, beforeWalltime, CmiWallTimer());
+  traceUserBracketEvent(CUDA_PME_SPREADCHARGE_EVENT, beforeWalltime, CmiWallTimer());
   beforeWalltime = CmiWallTimer();
   // gather (i.e. un-grid) forces
   SimParameters *simParams = Node::Object()->simParameters;
@@ -1456,7 +1451,7 @@ void ComputePmeCUDADevice::gatherForceDoneSubset(int first, int last) {
 void ComputePmeCUDADevice::gatherForceDone() {
   // Primary pencil has the forces
 
-  traceUserBracketEvent(CUDA_EVENT_GATHERFORCE, beforeWalltime, CmiWallTimer());
+  traceUserBracketEvent(CUDA_PME_GATHERFORCE_EVENT, beforeWalltime, CmiWallTimer());
 
   // Send forces to neighbors
   sendForcesToNeighbors();

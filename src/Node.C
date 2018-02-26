@@ -295,7 +295,7 @@ Node::Node(GroupInitMsg *msg)
 #endif
   if (CkpvAccess(Node_instance) == 0) {
     CkpvAccess(Node_instance) = this;
-    eventEndOfTimeStep = traceRegisterUserEvent("EndOfTimeStep");
+    eventEndOfTimeStep = traceRegisterUserEvent("EndOfTimeStep", 135);
   } else {
     NAMD_bug("Node::Node() - another instance of Node exists!");
   }

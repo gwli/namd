@@ -67,7 +67,7 @@ module ComputeMgr {
     entry void recvSkipPatchesOnPe(CudaComputeNonbondedMsg *msg);
     entry void recvFinishPatchesOnPe(CudaComputeNonbondedMsg *msg);
     entry void recvFinishPatchOnPe(CudaComputeNonbondedMsg *msg);
-    entry [expedited] void recvOpenBoxesOnPe(CudaComputeNonbondedMsg *msg);
+    entry void recvOpenBoxesOnPe(CudaComputeNonbondedMsg *msg);
     entry void recvFinishReductions(CudaComputeNonbondedMsg *msg);
     entry void recvMessageEnqueueWork(CudaComputeNonbondedMsg *msg);
     entry void recvLaunchWork(CudaComputeNonbondedMsg *msg);

@@ -52,6 +52,11 @@ void cuda_errcheck(const char *msg) {
     if ( cudaGetDevice(&devnum) == cudaSuccess ) {
       sprintf(devstr, " device %d", devnum);
     }
+    cudaDeviceProp deviceProp;
+    if ( cudaGetDeviceProperties(&deviceProp, devnum) == cudaSuccess ) {
+      sprintf(devstr, " device %d pci %x:%x:%x", devnum,
+        deviceProp.pciDomainID, deviceProp.pciBusID, deviceProp.pciDeviceID);
+    }
     char errmsg[1024];
     sprintf(errmsg,"CUDA error %s on Pe %d (%s%s): %s", msg, CkMyPe(), host, devstr, cudaGetErrorString(err));
     NAMD_die(errmsg);

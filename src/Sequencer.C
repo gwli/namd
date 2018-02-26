@@ -2258,7 +2258,7 @@ D_MSG("submitReductions()");
     submitReductions(step);
 //    print_vel_AOS(patch->atom.begin(), 0, patch->numAtoms);
 #ifndef UPPER_BOUND
-    if(traceIsOn()){
+    if(0){ // if(traceIsOn()){
         traceUserEvent(eventEndOfTimeStep);
         sprintf(traceNote, "%s%d",tracePrefix,step); 
         traceUserSuppliedNote(traceNote);
@@ -2463,7 +2463,7 @@ D_MSG("submitReductions()");
 	 }
 #endif
 	  
-        if(traceIsOn()){
+        if(0){ // if(traceIsOn()){
             traceUserEvent(eventEndOfTimeStep);
             sprintf(traceNote, "%s%d",tracePrefix,step); 
             traceUserSuppliedNote(traceNote);

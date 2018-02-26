@@ -1,5 +1,5 @@
 NAMD_ARCH = Linux-x86_64
-CHARMARCH = multicore-linux64-iccstatic
+CHARMARCH = multicore-linux-x86_64-iccstatic
 
 FLOATOPTS = -ip -axAVX
 

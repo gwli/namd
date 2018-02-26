@@ -1,5 +1,5 @@
 NAMD_ARCH = Linux-KNL
-CHARMARCH = multicore-linux64-iccstatic
+CHARMARCH = multicore-linux-x86_64-iccstatic
 
 FLOATOPTS = -ip -xMIC-AVX512
 

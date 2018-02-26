@@ -68,7 +68,6 @@ proc ::namdcph::cphRun {numsteps {numcycles 1}} {
             cphPrint "All proposals rejected ($nattempts total)."
             set runArgs [list norepeat $numsteps]
         } else {
-#            printProposalSummary $segresidList
             cphPrint "Proposal accepted ($nattempts), attemping a switch."
             set accept [runSwitch $swNumsteps $segresidList]
             set runArgs [list $numsteps]
@@ -501,7 +500,6 @@ proc ::namdcph::runMD {args} {
 proc ::namdcph::runSwitch {numsteps segresidList} {
     # (1) Checkpoint and modify output parameters. 
     #
-    checkpoint
     storeEnergies
     set storedOutputEnergies [outputEnergies]
     set storedDCDFreq [dcdFreq]
@@ -527,7 +525,6 @@ proc ::namdcph::runSwitch {numsteps segresidList} {
     set Work [expr {$::energyArray(CUMALCHWORK) + $DeltaE}]
     set ReducedWork [expr {$Work / ($::BOLTZMANN*[$::thermostatTempCmd])}]
     set accept [metropolisAcceptance $ReducedWork]
-#    printProposalSummary $segresidList
     set tmp [printProposalSummary $segresidList]
     cphPrint [format "%s WorkCorr % 10.4f CorrWork % 10.4f"\
             [join $tmp "/"] $DeltaE $Work]
@@ -546,7 +543,6 @@ proc ::namdcph::runSwitch {numsteps segresidList} {
     } else {
         cphPrint "Switch rejected!"
         alch off
-        revert
         reloadAndReinit [getMDBasename] false
     }
     return $accept
@@ -1070,7 +1066,6 @@ proc ::namdcph::printProposalSummary {segresidList} {
         set state [cphSystem get state $segresid]
         set trialState [cphSystem get trialState $segresid]
         lappend retList "$reslabel:$state:$trialState"
-#        cphPrint "Switch $reslabel $state --> $trialState"
     }
     return $retList
 }

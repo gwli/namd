@@ -4,6 +4,7 @@
 #include "WorkDistrib.h"
 #include "ProxyMgr.h"
 #include "CudaUtils.h"
+#include "DeviceCUDA.h"
 #include "ComputeBonds.h"
 #include "ComputeAngles.h"
 #include "ComputeDihedrals.h"
@@ -67,9 +68,6 @@ bondedKernel(deviceID, cudaNonbondedTables)
   if (params->accelMDOn) {
      if (params->accelMDdihe || params->accelMDdual) accelMDdoDihe=true;
   }
-
-#define BONDED_KERNEL_EVENT 701
-  traceRegisterUserEvent("CUDA BONDED KERNEL EVENT", BONDED_KERNEL_EVENT);
 }
 
 //
@@ -880,7 +878,7 @@ void ComputeBondedCUDA::forceDoneCheck(void *arg, double walltime) {
   if (err == cudaSuccess) {
     // Event has occurred
     c->checkCount = 0;
-    traceUserBracketEvent(BONDED_KERNEL_EVENT, c->beforeForceCompute, CkWallTimer());
+    traceUserBracketEvent(CUDA_BONDED_KERNEL_EVENT, c->beforeForceCompute, CkWallTimer());
     c->finishPatches();
     return;
   } else if (err != cudaErrorNotReady) {

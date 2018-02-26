@@ -89,6 +89,7 @@ proc alchPatch {patch segresid l0atomList l1atomList
     set NSkipH 0
     foreach l0atom $l0atomList l1atom $l1atomList {
         set Elem [string index $l0atom 0]
+        set Mass [segment mass $segid $resid $l0atom]
         # Coordinates
         if {($buildH) && ($Elem == "H") 
             && (($PrevElem == "H") || ($PrevElem == "C") 
@@ -102,7 +103,6 @@ proc alchPatch {patch segresid l0atomList l1atomList
         set PrevElem $Elem
         # Velocities
         if {$temp > 0} {
-            set Mass [segment mass $segid $resid $l0atom]
             set SigmaV [expr {($Mass > 0) ? [expr {sqrt($kT/$Mass)}] : 0.0}]
             set v {0.0 0.0 0.0}
             AddNoiseToVector v 0.0 $SigmaV
@@ -110,6 +110,7 @@ proc alchPatch {patch segresid l0atomList l1atomList
             set v [segment velocities $segid $resid $l0atom]
         }
         psfset vel $segid $resid $l1atom $v
+        psfset mass $segid $resid $l1atom $Mass
         # Alchemical Groups
         psfset beta $segid $resid $l0atom -1.0
         psfset beta $segid $resid $l1atom 1.0

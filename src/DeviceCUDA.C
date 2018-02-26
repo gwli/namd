@@ -202,6 +202,23 @@ void DeviceCUDA::initialize() {
     delete [] olddevices;
   }
 
+  int myRankForDevice = ignoresharing ? CkMyRank() : myRankInPhysicalNode;
+  int numPesForDevice = ignoresharing ? CkMyNodeSize() : numPesOnPhysicalNode;
+
+  // catch multiple processes per device
+  if ( ndevices % ( numPesForDevice / CkMyNodeSize() ) ) {
+    char msg[1024];
+    sprintf(msg,"Number of devices (%d) is not a multiple of number of processes (%d).  "
+            "Sharing devices between processes is inefficient.  "
+            "Specify +ignoresharing (each process uses all visible devices) if "
+            "not all devices are visible to each process, otherwise "
+            "adjust number of processes to evenly divide number of devices, "
+            "specify subset of devices with +devices argument (e.g., +devices 0,2), "
+            "or multiply list shared devices (e.g., +devices 0,1,2,0).",
+            ndevices, numPesForDevice / CkMyNodeSize() );
+    NAMD_die(msg);
+  }
+
   {
     // build list of devices actually used by this node
     nodedevices = new int[ndevices];
@@ -209,10 +226,24 @@ void DeviceCUDA::initialize() {
     int pe = CkNodeFirst(CkMyNode());
     int dr = -1;
     for ( int i=0; i<CkMyNodeSize(); ++i, ++pe ) {
-      int peDeviceRank = CmiPhysicalRank(pe) * ndevices / numPesOnPhysicalNode;
+      int rank = ignoresharing ? i : CmiPhysicalRank(pe);
+      int peDeviceRank = rank * ndevices / numPesForDevice;
       if ( peDeviceRank != dr ) {
         dr = peDeviceRank;
         nodedevices[nnodedevices++] = devices[dr];
+      }
+    }
+  }
+
+  {
+    // check for devices used twice by this node
+    for ( int i=0; i<nnodedevices; ++i ) {
+      for ( int j=i+1; j<nnodedevices; ++j ) {
+        if ( nodedevices[i] == nodedevices[j] ) { 
+          char msg[1024];
+          sprintf(msg,"Device %d bound twice by same process.", nodedevices[i]);
+          NAMD_die(msg);
+        }
       }
     }
   }
@@ -223,23 +254,18 @@ void DeviceCUDA::initialize() {
   nextPeSharingGpu = CkMyPe();
 
  {
-
     int dev;
-    if ( numPesOnPhysicalNode > 1 ) {
-      int myDeviceRank = myRankInPhysicalNode * ndevices / numPesOnPhysicalNode;
+    if ( numPesForDevice > 1 ) {
+      int myDeviceRank = myRankForDevice * ndevices / numPesForDevice;
       dev = devices[myDeviceRank];
       masterPe = CkMyPe();
-      if ( ignoresharing ) {
-        pesSharingDevice = new int[1];
-        pesSharingDevice[0] = CkMyPe();
-        numPesSharingDevice = 1;
-      } else {
-        pesSharingDevice = new int[numPesOnPhysicalNode];
+      {
+        pesSharingDevice = new int[numPesForDevice];
         masterPe = -1;
         numPesSharingDevice = 0;
-        for ( int i = 0; i < numPesOnPhysicalNode; ++i ) {
-          if ( i * ndevices / numPesOnPhysicalNode == myDeviceRank ) {
-            int thisPe = pesOnPhysicalNode[i];
+        for ( int i = 0; i < numPesForDevice; ++i ) {
+          if ( i * ndevices / numPesForDevice == myDeviceRank ) {
+            int thisPe = ignoresharing ? (CkNodeFirst(CkMyNode())+i) : pesOnPhysicalNode[i];
             pesSharingDevice[numPesSharingDevice++] = thisPe;
             if ( masterPe < 1 ) masterPe = thisPe;
             if ( WorkDistrib::pe_sortop_diffuse()(thisPe,masterPe) ) masterPe = thisPe;
@@ -299,10 +325,11 @@ void DeviceCUDA::initialize() {
     cudaDeviceProp deviceProp;
     cudaCheck(cudaGetDeviceProperties(&deviceProp, dev));
     if ( CmiPhysicalNodeID(masterPe) < 2 )
-    	CkPrintf("Pe %d physical rank %d binding to CUDA device %d on %s: '%s'  Mem: %dMB  Rev: %d.%d\n",
+    	CkPrintf("Pe %d physical rank %d binding to CUDA device %d on %s: '%s'  Mem: %dMB  Rev: %d.%d  PCI: %x:%x:%x\n",
                CkMyPe(), myRankInPhysicalNode, dev, host,
                deviceProp.name, deviceProp.totalGlobalMem / (1024*1024),
-               deviceProp.major, deviceProp.minor);
+               deviceProp.major, deviceProp.minor,
+               deviceProp.pciDomainID, deviceProp.pciBusID, deviceProp.pciDeviceID);
 
     cudaCheck(cudaSetDevice(dev));
 
@@ -392,6 +419,16 @@ BASE
 */
 
 void DeviceCUDA::register_user_events() {
+
+  traceRegisterUserEvent("CUDA PME spreadCharge", CUDA_PME_SPREADCHARGE_EVENT);
+  traceRegisterUserEvent("CUDA PME gatherForce", CUDA_PME_GATHERFORCE_EVENT);
+
+  traceRegisterUserEvent("CUDA bonded", CUDA_BONDED_KERNEL_EVENT);
+  traceRegisterUserEvent("CUDA debug", CUDA_DEBUG_EVENT);
+  traceRegisterUserEvent("CUDA nonbonded", CUDA_NONBONDED_KERNEL_EVENT);
+  traceRegisterUserEvent("CUDA GBIS Phase 1 kernel", CUDA_GBIS1_KERNEL_EVENT);
+  traceRegisterUserEvent("CUDA GBIS Phase 2 kernel", CUDA_GBIS2_KERNEL_EVENT);
+  traceRegisterUserEvent("CUDA GBIS Phase 3 kernel", CUDA_GBIS3_KERNEL_EVENT);
 
   traceRegisterUserEvent("CUDA poll remote", CUDA_EVENT_ID_POLL_REMOTE);
   traceRegisterUserEvent("CUDA poll local", CUDA_EVENT_ID_POLL_LOCAL);

@@ -98,17 +98,6 @@ tileListKernel(deviceID, doStreaming), GBISKernel(deviceID) {
   if (simParams->GBISOn) gbisPhase = 3;
 
   doSkip = false;
-
-#define CUDA_DEBUG_EVENT 171
-  traceRegisterUserEvent("CUDA DEBUG", CUDA_DEBUG_EVENT);
-#define CUDA_VDW_KERNEL 172
-  traceRegisterUserEvent("CUDA VdW kernel", CUDA_VDW_KERNEL);
-#define CUDA_GBIS1_KERNEL 173
-  traceRegisterUserEvent("CUDA GBIS Phase 1 kernel", CUDA_GBIS1_KERNEL);
-#define CUDA_GBIS2_KERNEL 174
-  traceRegisterUserEvent("CUDA GBIS Phase 2 kernel", CUDA_GBIS2_KERNEL);
-#define CUDA_GBIS3_KERNEL 175
-  traceRegisterUserEvent("CUDA GBIS Phase 3 kernel", CUDA_GBIS3_KERNEL);
 }
 
 //
@@ -1416,13 +1405,13 @@ void CudaComputeNonbonded::finishTimers() {
 
   if (simParams->GBISOn) {
     if (gbisPhase == 1)
-      traceUserBracketEvent(CUDA_GBIS1_KERNEL, beforeForceCompute, CkWallTimer());
+      traceUserBracketEvent(CUDA_GBIS1_KERNEL_EVENT, beforeForceCompute, CkWallTimer());
     if (gbisPhase == 2)
-      traceUserBracketEvent(CUDA_GBIS2_KERNEL, beforeForceCompute, CkWallTimer());
+      traceUserBracketEvent(CUDA_GBIS2_KERNEL_EVENT, beforeForceCompute, CkWallTimer());
     if (gbisPhase == 3)
-      traceUserBracketEvent(CUDA_GBIS3_KERNEL, beforeForceCompute, CkWallTimer());
+      traceUserBracketEvent(CUDA_GBIS3_KERNEL_EVENT, beforeForceCompute, CkWallTimer());
   } else {
-    traceUserBracketEvent(CUDA_VDW_KERNEL, beforeForceCompute, CkWallTimer());
+    traceUserBracketEvent(CUDA_NONBONDED_KERNEL_EVENT, beforeForceCompute, CkWallTimer());
   }  
 }
 
@@ -1468,7 +1457,8 @@ void CudaComputeNonbonded::forceDoneCheck(void *arg, double walltime) {
 
       // Finish patch
       int pe = c->patches[patchInd].pe;
-      c->computeMgr->sendFinishPatchOnPe(pe, c, patchInd);
+      PatchID patchID = c->patches[patchInd].patchID;  // for priority
+      c->computeMgr->sendFinishPatchOnPe(pe, c, patchInd, patchID);
 
       // Last patch, return
       if ( c->patchReadyQueueNext == c->patchReadyQueueLen ) return;

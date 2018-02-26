@@ -125,7 +125,7 @@ public:
   void recvSkipPatchesOnPe(CudaComputeNonbondedMsg *msg);
   void sendFinishPatchesOnPe(std::vector<int>& pes, CudaComputeNonbonded* c);
   void recvFinishPatchesOnPe(CudaComputeNonbondedMsg *msg);
-  void sendFinishPatchOnPe(int pe, CudaComputeNonbonded* c, int i);
+  void sendFinishPatchOnPe(int pe, CudaComputeNonbonded* c, int i, PatchID patchID);
   void recvFinishPatchOnPe(CudaComputeNonbondedMsg *msg);
   void sendOpenBoxesOnPe(std::vector<int>& pes, CudaComputeNonbonded* c);
   void recvOpenBoxesOnPe(CudaComputeNonbondedMsg *msg);

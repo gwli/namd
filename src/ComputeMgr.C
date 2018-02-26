@@ -1615,7 +1615,8 @@ void ComputeMgr::recvSkipPatchesOnPe(CudaComputeNonbondedMsg *msg) {
 
 void ComputeMgr::sendFinishPatchesOnPe(std::vector<int>& pes, CudaComputeNonbonded* c) {
   for (int i=0;i < pes.size();i++) {
-    CudaComputeNonbondedMsg *msg = new CudaComputeNonbondedMsg;
+    CudaComputeNonbondedMsg *msg = new (PRIORITY_SIZE) CudaComputeNonbondedMsg;
+    SET_PRIORITY(msg, c->sequence(), COMPUTE_PROXY_PRIORITY);
     msg->c = c;
     thisProxy[pes[i]].recvFinishPatchesOnPe(msg);
   }
@@ -1626,8 +1627,9 @@ void ComputeMgr::recvFinishPatchesOnPe(CudaComputeNonbondedMsg *msg) {
   delete msg;
 }
 
-void ComputeMgr::sendFinishPatchOnPe(int pe, CudaComputeNonbonded* c, int i) {
-  CudaComputeNonbondedMsg *msg = new CudaComputeNonbondedMsg;
+void ComputeMgr::sendFinishPatchOnPe(int pe, CudaComputeNonbonded* c, int i, PatchID patchID) {
+  CudaComputeNonbondedMsg *msg = new (PRIORITY_SIZE) CudaComputeNonbondedMsg;
+  SET_PRIORITY(msg, c->sequence(), COMPUTE_PROXY_PRIORITY + PATCH_PRIORITY(patchID));
   msg->c = c;
   msg->i = i;
   thisProxy[pe].recvFinishPatchOnPe(msg);
@@ -1640,7 +1642,8 @@ void ComputeMgr::recvFinishPatchOnPe(CudaComputeNonbondedMsg *msg) {
 
 void ComputeMgr::sendOpenBoxesOnPe(std::vector<int>& pes, CudaComputeNonbonded* c) {
   for (int i=0;i < pes.size();i++) {
-    CudaComputeNonbondedMsg *msg = new CudaComputeNonbondedMsg;
+    CudaComputeNonbondedMsg *msg = new (PRIORITY_SIZE) CudaComputeNonbondedMsg;
+    SET_PRIORITY(msg, c->sequence(), PROXY_DATA_PRIORITY+1); // after bonded
     msg->c = c;
     thisProxy[pes[i]].recvOpenBoxesOnPe(msg);
   }
@@ -1731,7 +1734,8 @@ void ComputeMgr::recvMessageEnqueueWork(ComputeBondedCUDAMsg *msg) {
 
 void ComputeMgr::sendOpenBoxesOnPe(std::vector<int>& pes, ComputeBondedCUDA* c) {
   for (int i=0;i < pes.size();i++) {
-    ComputeBondedCUDAMsg *msg = new ComputeBondedCUDAMsg;
+    ComputeBondedCUDAMsg *msg = new (PRIORITY_SIZE) ComputeBondedCUDAMsg;
+    SET_PRIORITY(msg, c->sequence(), PROXY_DATA_PRIORITY);
     msg->c = c;
     thisProxy[pes[i]].recvOpenBoxesOnPe(msg);
   }
@@ -1768,7 +1772,8 @@ void ComputeMgr::recvLaunchWork(ComputeBondedCUDAMsg *msg) {
 
 void ComputeMgr::sendFinishPatchesOnPe(std::vector<int>& pes, ComputeBondedCUDA* c) {
   for (int i=0;i < pes.size();i++) {
-    ComputeBondedCUDAMsg *msg = new ComputeBondedCUDAMsg;
+    ComputeBondedCUDAMsg *msg = new (PRIORITY_SIZE) ComputeBondedCUDAMsg;
+    SET_PRIORITY(msg, c->sequence(), COMPUTE_PROXY_PRIORITY);
     msg->c = c;
     thisProxy[pes[i]].recvFinishPatchesOnPe(msg);
   }

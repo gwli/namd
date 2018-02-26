@@ -488,14 +488,24 @@ the namd2 command line, for example:
 Devices are shared by consecutive threads in a process, so in the
 above example threads 0-3 will share device 0 and threads 4-7 will
 share device 2.  Repeating a device will cause it to be assigned to
-multiple master threads, either in the same or different processes, which
-is advised against in general but may be faster in certain cases.  In the
-above example one could specify +devices 0,2,0,2 to cause device 0 to be
-shared by threads 0-1 and 4-5, etc.  When running on multiple nodes the
-+devices specification is applied to each physical node separately and
-there is no way to provide a unique list for each node.
+multiple master threads, which is allowed only for different processes
+and is advised against in general but may be faster in certain cases.
+When running on multiple nodes the +devices specification is applied to
+each physical node separately and there is no way to provide a unique
+list for each node.
 
-GPUs of compute capability 1.0 are no longer supported and are ignored.
+When running a multi-node parallel job it is recommended to have one
+process per device to maximize the number of communication threads.
+If the job launch system enforces device segregation such that not all
+devices are visible to each process then the +ignoresharing argument
+must be used to disable the shared-device error message.
+
+When running a multi-copy simulation with both multiple replicas and
+multiple devices per physical node, the +devicesperreplica <n> argument
+must be used to prevent each replica from binding all of the devices.
+For example, for 2 replicas per 6-device host use +devicesperreplica 3. 
+
+GPUs of compute capability < 3.0 are no longer supported and are ignored.
 GPUs with two or fewer multiprocessors are ignored unless specifically
 requested with +devices.
 
@@ -570,8 +580,8 @@ Unpack NAMD and matching Charm++ source code:
 
 Build and test the Charm++/Converse library (single-node multicore version):
   cd charm-6.8.2
-  ./build charm++ multicore-linux64 --with-production
-  cd multicore-linux64/tests/charm++/megatest
+  ./build charm++ multicore-linux-x86_64 --with-production
+  cd multicore-linux-x86_64/tests/charm++/megatest
   make pgm
   ./pgm +p4   (multicore does not support multiple nodes)
   cd ../../../../..
@@ -619,7 +629,7 @@ Optionally edit various configuration files:
   vi arch/Linux-x86_64.tcl      (fix library version and path to TCL files)
 
 Set up build directory and compile:
-  multicore version: ./config Linux-x86_64-g++ --charm-arch multicore-linux64
+  multicore version: ./config Linux-x86_64-g++ --charm-arch multicore-linux-x86_64
   ethernet version: ./config Linux-x86_64-g++ --charm-arch netlrts-linux-x86_64
   InfiniBand version: ./config Linux-x86_64-g++ --charm-arch verbs-linux-x86_64
   MPI version: ./config Linux-x86_64-g++ --charm-arch mpi-linux-x86_64

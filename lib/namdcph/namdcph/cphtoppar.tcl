@@ -467,11 +467,6 @@ proc ::cphSystem::buildSystem {resDefs resAliases segresExcls} {
                 psfset resname $segid $resid $realName
                 set resname $realName
             }
-            # Make sure we have no stray nonzero B-factors
-            # TODO: Check that this is really ok and warn the user?
-            foreach atom [segment atoms $segid $resid] {
-                psfset beta $segid $resid $atom 0.0
-            }
             # Bail here if the residue name does not match any of the
             # definitions or the segresid is explicitly excluded.
             if {[lsearch -nocase [dict keys $resDefDict] $resname] < 0
@@ -1140,6 +1135,19 @@ proc ::cphSystem::resDef2Matrix {resDef data} {
                 lset Matrix [index2flatindex 6 5] $attr65
                 lset Matrix [index2flatindex 6 3] $attr63
                 lset Matrix [index2flatindex 5 3] $attr53
+            } elseif {![lindex $nprotonsExists 2]
+                      && ![lindex $nprotonsExists 3]} {
+                # state (1, 1, 1) and 2 proton states missing
+                switch -- $numValues 1 {;# Ex. phosphate monoesters
+                    lassign $data attr10
+                    set attr20 $attr10
+                    set attr40 $attr10
+                } default {
+                    set errorCode -1
+                }
+                lset Matrix [index2flatindex 1 0] $attr10
+                lset Matrix [index2flatindex 2 0] $attr20
+                lset Matrix [index2flatindex 4 0] $attr40
             } else {
                 set errorCode -1
             }

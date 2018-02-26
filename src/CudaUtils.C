@@ -18,6 +18,11 @@ void cudaDie(const char *msg, cudaError_t err) {
   if ( cudaGetDevice(&devnum) == cudaSuccess ) {
     sprintf(devstr, " device %d", devnum);
   }
+  cudaDeviceProp deviceProp;
+  if ( cudaGetDeviceProperties(&deviceProp, devnum) == cudaSuccess ) {
+    sprintf(devstr, " device %d pci %x:%x:%x", devnum,
+      deviceProp.pciDomainID, deviceProp.pciBusID, deviceProp.pciDeviceID);
+  }
   char errmsg[1024];
   if (err == cudaSuccess) {
     sprintf(errmsg,"CUDA error %s on Pe %d (%s%s)", msg, CkMyPe(), host, devstr);
