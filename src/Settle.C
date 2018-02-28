@@ -8,6 +8,11 @@
 #include "Settle.h"
 #include <string.h>
 #include <math.h>
+#ifdef NAMD_MSHAKE
+#include <Eigen/Dense>
+#endif
+#include "InfoStream.h"
+
 //#include <charm++.h> // for CkPrintf
 
 #if defined(__SSE2__) && ! defined(NAMD_DISABLE_SSE)
@@ -579,6 +584,213 @@ void rattlePair(const RattleParam* rattleParam,
   posz[b] -= rmb * dpz;
 
 }
+#if 0
+void iterate(const int icnt, const RattleParam* rattleParam,
+  const BigReal *refx, const BigReal *refy, const BigReal *refz,
+  BigReal *posx, BigReal *posy, BigReal *posz,
+  const BigReal tol2, const int maxiter,
+  bool& done, bool& consFailure)
+{
+
+    using namespace Eigen;
+    #ifdef SHORTREALS
+    typedef VectorXf VectorXr;
+    typedef MatrixXf MatrixXr;
+    #else
+    typedef VectorXd VectorXr;
+    typedef MatrixXd MatrixXr;
+    #endif
+    VectorXr sigma(icnt), lambda(icnt), ptmp(3*icnt), rtmp(3*icnt);
+    MatrixXr A(icnt, icnt);
+    register int loop;
+    consFailure = false;
+    PartialPivLU<MatrixXr> lu;
+    bool constructMatrix = true;
+    for(loop = 0; loop < maxiter; ++loop)
+    {
+        done = true;
+        for(int i = 0; i < icnt; ++i)
+        {
+            int a = rattleParam[i].ia;
+            int b = rattleParam[i].ib;
+            BigReal pabx = posx[a] - posx[b];
+            BigReal paby = posy[a] - posy[b];
+            BigReal pabz = posz[a] - posz[b];
+            ptmp(3*i)   = pabx;
+            ptmp(3*i+1) = paby;
+            ptmp(3*i+2) = pabz;
+            BigReal pabsq = pabx*pabx + paby*paby + pabz*pabz;
+            BigReal rabsq = rattleParam[i].dsq;
+            BigReal diffsq = pabsq - rabsq;
+            sigma(i) = diffsq;
+            if ( fabs(diffsq) > (rabsq * tol2) )
+                done = false;
+        }
+        if(!done)
+        {
+            if(constructMatrix)
+            {
+                for(int i = 0; i < icnt; ++i)
+                {
+                   int a = rattleParam[i].ia;
+                   int b = rattleParam[i].ib;
+                   rtmp[3*i]   = refx[a] - refx[b]; 
+                   rtmp[3*i+1] = refy[a] - refy[b];
+                   rtmp[3*i+2] = refz[a] - refz[b];
+                }
+                for(int i = 0; i < icnt; ++i)
+                {
+                    //int a = rattleParam[i].ia;
+                    //int b = rattleParam[i].ib;
+                    BigReal pabx = ptmp[3*i];
+                    BigReal paby = ptmp[3*i+1];
+                    BigReal pabz = ptmp[3*i+2];
+                    BigReal rma = rattleParam[i].rma;
+                    BigReal rmb = rattleParam[i].rmb;
+
+                    for(int j = 0; j < icnt; ++j)
+                    {
+                        //int c = rattleParam[j].ia;
+                        //int d = rattleParam[j].ib;
+                        BigReal rabx = rtmp[3*j];
+                        BigReal raby = rtmp[3*j+1];
+                        BigReal rabz = rtmp[3*j+2];
+                        if(i==j)
+                            A(i,i) = 2.*(pabx*rabx+paby*raby+pabz*rabz)*(rma+rmb);
+                        else
+                            A(i,j) = 2.*(pabx*rabx+paby*raby+pabz*rabz)*rma;
+                    }
+                }
+            //sigma = A.transpose()*sigma;
+            //A = A.transpose() * A;
+            //LLT<MatrixXr> llt;
+                lu.compute(A);
+                constructMatrix = false;
+            }
+            //sigma = A.transpose()*sigma;
+            //lambda = A.llt().solve(sigma);
+            lambda = lu.solve(sigma);
+            //lambda = A.lu().solve(sigma);
+            for(int i = 0; i < icnt; ++i)
+            {
+                int a = rattleParam[i].ia;
+                int b = rattleParam[i].ib;
+                BigReal rma = rattleParam[i].rma * lambda(i);
+                BigReal rmb = rattleParam[i].rmb * lambda(i);
+
+                BigReal rabx  = rtmp[3*i];
+                BigReal raby  = rtmp[3*i+1];
+                BigReal rabz  = rtmp[3*i+2];
+                posx[a] -= rma * rabx;
+                posy[a] -= rma * raby;
+                posz[a] -= rma * rabz;
+                posx[b] += rmb * rabx;
+                posy[b] += rmb * raby;
+                posz[b] += rmb * rabz;
+            }
+        }
+        else
+            break;
+    }
+    if(loop >= maxiter)
+        consFailure = true;
+}
+#endif
+#ifdef NAMD_MSHAKE
+void iterate(const int icnt, const RattleParam* rattleParam,
+  const BigReal *refx, const BigReal *refy, const BigReal *refz,
+  BigReal *posx, BigReal *posy, BigReal *posz,
+  const BigReal tol2, const int maxiter,
+  bool& done, bool& consFailure)
+{
+    using namespace Eigen;
+    #ifdef SHORTREALS
+    typedef VectorXf VectorXr;
+    typedef MatrixXf MatrixXr;
+    #else
+    typedef VectorXd VectorXr;
+    typedef MatrixXd MatrixXr;
+    #endif
+    VectorXr sigma(icnt), lambda(icnt);
+    MatrixXr A(icnt, icnt);
+
+    //check each constraint
+    register int loop;
+    consFailure = false;
+    for(loop = 0; loop < maxiter; ++loop)
+    {
+        done = true;
+        for(int i = 0; i < icnt; ++i)
+        {
+            int a = rattleParam[i].ia;
+            int b = rattleParam[i].ib;
+            BigReal pabx = posx[a] - posx[b];
+            BigReal paby = posy[a] - posy[b];
+            BigReal pabz = posz[a] - posz[b];
+            BigReal pabsq = pabx*pabx + paby*paby + pabz*pabz;
+            BigReal rabsq = rattleParam[i].dsq;
+            BigReal diffsq = pabsq - rabsq;
+            //iout << diffsq << " " << endi;
+            sigma(i) = diffsq;
+            if ( fabs(diffsq) > (rabsq * tol2) )
+                done = false;
+        }
+        if(!done)
+        {
+            //construct A
+            for(int i = 0; i < icnt; ++i)
+            {
+                int a = rattleParam[i].ia;
+                int b = rattleParam[i].ib;
+                BigReal pabx = posx[a] - posx[b];
+                BigReal paby = posy[a] - posy[b];
+                BigReal pabz = posz[a] - posz[b];
+                BigReal rma = rattleParam[i].rma;
+                BigReal rmb = rattleParam[i].rmb;
+
+                for(int j = 0; j < icnt; ++j)
+                {
+                    int c = rattleParam[j].ia;
+                    int d = rattleParam[j].ib;
+                    BigReal rabx = refx[c] - refx[d];
+                    BigReal raby = refy[c] - refy[d];
+                    BigReal rabz = refz[c] - refz[d];
+                    if(i==j)
+                        A(i,i) = 2.*(pabx*rabx+paby*raby+pabz*rabz)*(rma+rmb);
+                    else
+                        A(i,j) = 2.*(pabx*rabx+paby*raby+pabz*rabz)*rma;
+                }
+            }
+            sigma = A.transpose()*sigma;
+            A = A.transpose() * A;
+            //LLT<MatrixXr> llt;
+            //llt.compute(A);
+            lambda = A.llt().solve(sigma);
+            for(int i = 0; i < icnt; ++i)
+            {
+                int a = rattleParam[i].ia;
+                int b = rattleParam[i].ib;
+                BigReal rma = rattleParam[i].rma * lambda(i);
+                BigReal rmb = rattleParam[i].rmb * lambda(i);
+
+                BigReal rabx  = refx[a]-refx[b];
+                BigReal raby  = refy[a]-refy[b];
+                BigReal rabz  = refz[a]-refz[b];
+                posx[a] -= rma * rabx;
+                posy[a] -= rma * raby;
+                posz[a] -= rma * rabz;
+                posx[b] += rmb * rabx;
+                posy[b] += rmb * raby;
+                posz[b] += rmb * rabz;
+            }
+        }
+        else
+            break;
+    }
+    if(loop == maxiter)
+        consFailure = true;
+}
+#endif
 
 void rattleN(const int icnt, const RattleParam* rattleParam,
   const BigReal *refx, const BigReal *refy, const BigReal *refz,

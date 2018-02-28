@@ -70,7 +70,13 @@ void rattleN(const int icnt, const RattleParam* rattleParam,
   BigReal *posx, BigReal *posy, BigReal *posz,
   const BigReal tol2, const int maxiter,
   bool& done, bool& consFailure);
-
+#ifdef NAMD_MSHAKE
+void iterate(const int icnt, const RattleParam* rattleParam,
+  const BigReal *refx, const BigReal *refy, const BigReal *refz,
+  BigReal *posx, BigReal *posy, BigReal *posz,
+  const BigReal tol2, const int maxiter,
+  bool& done, bool& consFailure);
+#endif
 extern int settle2(BigReal mO, BigReal mH, const Vector *pos,
                    Vector *vel, BigReal dt, Tensor *virial); 
 
