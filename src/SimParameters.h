@@ -105,6 +105,10 @@ public:
 //  MAKE SURE THAT THIS CLASS CAN BE BIT COPIED OR YOU WILL HAVE TO
 //  ADD SPECIAL CODE TO send_SimParameters() and receive_SimParameters()
 
+#if defined(NAMD_MSHAKE)
+  int mshakeOn;
+#endif
+
 #if defined(NAMD_USE_NVTX)
   int beginEventPatchID;
   int endEventPatchID;

@@ -657,6 +657,10 @@ void SimParameters::config_parser_basic(ParseOptions &opts) {
    opts.optional("main", "endEventStep", "Ending time step for profiling",
        &endEventStep, 1000);
 #endif
+#if defined(NAMD_MSHAKE)
+   opts.optionalB("main", "mshake", "Using MSHAKE for rigid bond constraints",
+       &mshakeOn, FALSE);
+#endif
 }
 
 void SimParameters::config_parser_fileio(ParseOptions &opts) {
