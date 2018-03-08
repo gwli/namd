@@ -105,6 +105,13 @@ public:
 //  MAKE SURE THAT THIS CLASS CAN BE BIT COPIED OR YOU WILL HAVE TO
 //  ADD SPECIAL CODE TO send_SimParameters() and receive_SimParameters()
 
+#if defined(NAMD_USE_NVTX)
+  int beginEventPatchID;
+  int endEventPatchID;
+  int beginEventStep;
+  int endEventStep;
+#endif
+
   Bool SOAintegrateOn;  // use SOA integration routine for higher performance
 
   Bool lonepairs;  // enable lone pairs

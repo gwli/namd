@@ -645,6 +645,18 @@ void SimParameters::config_parser_basic(ParseOptions &opts) {
    // SOA integration routine for higher performance
    opts.optionalB("main", "SOAintegrate", "Use SOA integration routine",
        &SOAintegrateOn, FALSE);
+#if defined(NAMD_USE_NVTX)
+   // default NVTX profiling is up to the first 1000 patches
+   opts.optional("main", "beginEventPatchID","Beginning patch ID for profiling",
+       &beginEventPatchID, 0);
+   opts.optional("main", "endEventPatchID", "Ending patch ID for profiling",
+       &endEventPatchID, 999);
+   // default NVTX profiling is up to the first 1000 time steps
+   opts.optional("main", "beginEventStep", "Beginning time step for profiling",
+       &beginEventStep, 0);
+   opts.optional("main", "endEventStep", "Ending time step for profiling",
+       &endEventStep, 1000);
+#endif
 }
 
 void SimParameters::config_parser_fileio(ParseOptions &opts) {

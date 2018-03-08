@@ -291,37 +291,46 @@ const uint32_t NAMD_nvtx_colors[] = {
 const int NAMD_nvtx_colors_len = sizeof(NAMD_nvtx_colors)/sizeof(uint32_t);
 
 // start recording an event
-#define PUSH_RANGE(name,cid) \
+#define PUSH_RANGE(eon,name,cid) \
   do { \
-    int color_id = cid; \
-    color_id = color_id % NAMD_nvtx_colors_len; \
-    nvtxEventAttributes_t eventAttrib = {0}; \
-    eventAttrib.version = NVTX_VERSION; \
-    eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE; \
-    eventAttrib.colorType = NVTX_COLOR_ARGB; \
-    eventAttrib.color = NAMD_nvtx_colors[color_id]; \
-    eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII; \
-    eventAttrib.message.ascii = name; \
-    nvtxRangePushEx(&eventAttrib); \
+    if (eon) { \
+      int color_id = cid; \
+      color_id = color_id % NAMD_nvtx_colors_len; \
+      nvtxEventAttributes_t eventAttrib = {0}; \
+      eventAttrib.version = NVTX_VERSION; \
+      eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE; \
+      eventAttrib.colorType = NVTX_COLOR_ARGB; \
+      eventAttrib.color = NAMD_nvtx_colors[color_id]; \
+      eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII; \
+      eventAttrib.message.ascii = name; \
+      nvtxRangePushEx(&eventAttrib); \
+    } \
   } while(0)  // must terminate with semi-colon
 
 // stop recording an event
-#define POP_RANGE \
-  nvtxRangePop()
-  // must terminate with semi-colon
+#define POP_RANGE(eon) \
+  do { \
+    if (eon) { \
+      nvtxRangePop(); \
+    } \
+  } while(0)  // must terminate with semi-colon
 
 // embed event recording in class to automatically pop when destroyed
 class NAMD_NVTX_Tracer {
+  protected:
+    int evon;  // is event on?
   public:
-    NAMD_NVTX_Tracer(const char *name, int cid = 0) { PUSH_RANGE(name, cid); }
-    ~NAMD_NVTX_Tracer() { POP_RANGE; }
+    NAMD_NVTX_Tracer(int eon, const char *name, int cid = 0) : evon(eon) {
+      PUSH_RANGE(eon, name, cid);
+    }
+    ~NAMD_NVTX_Tracer() { POP_RANGE(evon); }
 };
 
 // include cid as part of the name
 // call RANGE at beginning of function to push event recording
 // destructor is automatically called on return to pop event recording
-#define RANGE(name,cid) \
-  NAMD_NVTX_Tracer namd_nvtx_tracer##cid(name,cid)
+#define RANGE(eon,name,cid) \
+  NAMD_NVTX_Tracer namd_nvtx_tracer##cid(eon,name,cid)
   // must terminate with semi-colon
 
 #else
@@ -329,9 +338,9 @@ class NAMD_NVTX_Tracer {
 //
 // Otherwise the NVTX profiling macros become no-ops.
 //
-#define PUSH_RANGE(name,cid) do { } while(0)  // must terminate with semi-colon
-#define POP_RANGE            do { } while(0)  // must terminate with semi-colon
-#define RANGE(namd,cid)      do { } while(0)  // must terminate with semi-colon
+#define PUSH_RANGE(eon,name,cid) do { } while(0)
+#define POP_RANGE(eon)           do { } while(0)
+#define RANGE(eon,namd,cid)      do { } while(0)
 
 #endif // NAMD_CUDA && NAMD_USE_NVTX
 
