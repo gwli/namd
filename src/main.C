@@ -42,6 +42,15 @@
 #include "ComputeMsmMsa.h"  // needed for MsmMsaData definition
 #include "main.decl.h"
 #include "main.h"
+#include "NamdEventsProfiling.h"
+
+void RegisterNamdEventsProfiling() {
+  CkPrintf("########### eventCount: %d #########\n", NamdProfileEvent::EventsCount);
+  for (int i = 0; i < NamdProfileEvent::EventsCount; i++) {
+    CkPrintf("########### name: %s, id: %d ##########\n", NamdProfileEventStr[i], i);
+    NAMD_REGISTER_EVENT(NamdProfileEventStr[i], i);
+  }
+}
 
 #ifndef NO_SOCKET
 
@@ -201,6 +210,8 @@ public:
       NAMD_die("SMP build launched as multiple single-thread processes.  Use ++ppn to set number of worker threads per process to match available cores, reserving one core per process for communication thread.");
     }
 #endif
+    // Register events marked for profiling
+    RegisterNamdEventsProfiling();
   }
 };
 

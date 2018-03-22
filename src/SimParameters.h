@@ -109,7 +109,7 @@ public:
   int mshakeOn;
 #endif
 
-#if defined(NAMD_USE_NVTX)
+#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
   int beginEventPatchID;
   int endEventPatchID;
   int beginEventStep;

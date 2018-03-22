@@ -19,7 +19,6 @@ class ControllerBroadcasts;
 class LdbCoordinator;
 class Random;
 
-#define SEQUENCER_SOA
 
 class Sequencer
 {

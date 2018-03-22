@@ -45,6 +45,7 @@
 #include "PatchMap.inl"
 #include "ComputeMgr.h"
 #include "ComputeGlobal.h"
+#include "NamdEventsProfiling.h"
 
 #define MIN_DEBUG_LEVEL 4
 //#define DEBUGM
@@ -550,7 +551,7 @@ D_MSG("submiReductionsp_SOA()");
     rebalanceLoad(step);
   } // scriptTask == SCRIPT_RUN
 
-#if defined(NAMD_USE_NVTX)
+#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
   int& eon = patch->flags.event_on;
   int epid = (simParams->beginEventPatchID <= patch->getPatchID()
       && patch->getPatchID() <= simParams->endEventPatchID);
@@ -559,10 +560,10 @@ D_MSG("submiReductionsp_SOA()");
 #endif
 
   for ( ++step; step <= numberOfSteps; ++step ) {
-#if defined(NAMD_USE_NVTX)
+#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
       eon = epid && (beginStep < step && step <= endStep);
 #endif
-    PUSH_RANGE(eon, "integrate_SOA 1", 0);
+    NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_SOA_1);
 
     // kick 0.5
 D_MSG("addForceToMomentum_SOA()");
@@ -592,7 +593,7 @@ D_MSG("addForceToMomentum_SOA()");
         patch->patchDataSOA.numAtoms
         );
 
-    POP_RANGE(eon);  // integrate_SOA 1
+    NAMD_EVENT_STOP(eon, NamdProfileEvent::INTEGRATE_SOA_1);  // integrate_SOA 1
 
     if ( simParams->langevinPistonOn ) {
 
@@ -647,7 +648,7 @@ D_MSG("addForceToMomentum_SOA()");
           );
     }
 
-    PUSH_RANGE(eon, "integrate_SOA 2", 1);
+    NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_SOA_2);
 
     doNonbonded = !(step%nonbondedFrequency);
     doFullElectrostatics = (dofull && !(step%fullElectFrequency));
@@ -674,12 +675,12 @@ D_MSG("addForceToMomentum_SOA()");
     doKineticEnergy = 1;
     doMomenta = 1;
 
-    POP_RANGE(eon);  // integrate_SOA 2
+    NAMD_EVENT_STOP(eon, NamdProfileEvent::INTEGRATE_SOA_2); // integrate_SOA 2
 
     // The current thread of execution will suspend in runComputeObjects().
     runComputeObjects_SOA(!(step%stepsPerCycle),step<numberOfSteps);
 
-    PUSH_RANGE(eon, "integrate_SOA 3", 2);
+    NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_SOA_3);
 
     langevinVelocitiesBBK1_SOA(
         timestep,
@@ -777,7 +778,7 @@ D_MSG("addForceToMomentum_SOA()");
         );
     submitCollections_SOA(step);
 
-    POP_RANGE(eon);  // integrate_SOA 3
+    NAMD_EVENT_STOP(eon, NamdProfileEvent::INTEGRATE_SOA_3); // integrate_SOA 3
 
     rebalanceLoad(step);
   }
@@ -811,7 +812,7 @@ void Sequencer::addForceToMomentum_SOA(
     int numAtoms,
     int maxForceNumber
     ) {
-  RANGE(patch->flags.event_on, "addForceToMomentum_SOA", 3);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::ADD_FORCE_TO_MOMENTUM_SOA);
   //
   // We could combine each case into a single loop with breaks,
   // with all faster forces also summed, like addForceToMomentum3().
@@ -864,7 +865,7 @@ void Sequencer::addVelocityToPosition_SOA(
     double *       __restrict pos_z,
     int numAtoms      ///< number of atoms
     ) {
-  RANGE(patch->flags.event_on, "addVelocityToPosition_SOA", 5);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::ADD_VELOCITY_TO_POSITION_SOA);
   for (int i=0;  i < numAtoms;  i++) {
     pos_x[i] += vel_x[i] * dt;
     pos_y[i] += vel_y[i] * dt;
@@ -881,7 +882,7 @@ void Sequencer::submitHalfstep_SOA(
     const double * __restrict vel_z,
     int numAtoms
     ) {
-  RANGE(patch->flags.event_on, "submitHalfstep_SOA", 6);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::SUBMIT_HALFSTEP_SOA);
   if ( 1 /* doKineticEnergy || patch->flags.doVirial */ ) {
     BigReal kineticEnergy = 0;
     Tensor virial;
@@ -981,7 +982,7 @@ void Sequencer::submitReductions_SOA(
     const double * __restrict f_slow_z,
     int numAtoms
     ) {
-  RANGE(patch->flags.event_on, "submitReductions", 10);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::SUBMIT_REDUCTIONS_SOA);
   reduction->item(REDUCTION_ATOM_CHECKSUM) += numAtoms;
   reduction->item(REDUCTION_MARGIN_VIOLATIONS) += patch->marginViolations;
   if ( 1 /* doKineticEnergy || doMomenta || patch->flags.doVirial */ ) {
@@ -1290,7 +1291,7 @@ void Sequencer::submitCollections_SOA(int step, int zeroVel /* = 0 */)
   //
   // XXX Could update positions and velocities separately.
   //
-  RANGE(patch->flags.event_on, "submitCollections_SOA", 11);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::SUBMIT_COLLECTIONS_SOA);
   //
   // XXX Poor implementation here!
   // The selector functions called below in Output.C are
@@ -1327,7 +1328,7 @@ void Sequencer::maximumMove_SOA(
     const double * __restrict vel_z,
     int numAtoms      ///< number of atoms
     ) {
-  RANGE(patch->flags.event_on, "maximumMove_SOA", 4);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::MAXIMUM_MOVE_SOA);
 
 #if 0
   if ( simParams->maximumMove ) {
@@ -1392,7 +1393,7 @@ void Sequencer::langevinVelocitiesBBK1_SOA(
     double      * __restrict vel_z,
     int numAtoms
     ) {
-  RANGE(patch->flags.event_on, "langevinVelocitiesBBK1_SOA", 7);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::LANGEVIN_VELOCITIES_BBK1_SOA);
   if ( simParams->langevinOn /* && !simParams->langevin_useBAOAB */ )
   {
 #if 0
@@ -1490,7 +1491,7 @@ void Sequencer::langevinVelocitiesBBK2_SOA(
     int numAtoms
     )
 {
-  RANGE(patch->flags.event_on, "langevinVelocitiesBBK2_SOA", 8);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::LANGEVIN_VELOCITIES_BBK2_SOA);
   if ( simParams->langevinOn /* && !simParams->langevin_useBAOAB */ ) 
   {
 #if 0
@@ -1796,7 +1797,7 @@ void Sequencer::langevinPiston_SOA(
 // timestep scaled by 1/TIMEFACTOR
 void Sequencer::rattle1_SOA(BigReal timestep, int pressure)
 {
-  RANGE(patch->flags.event_on, "rattle1_SOA", 9);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::RATTLE1_SOA);
   //dt *= TIMEFACTOR;  // convert to fs
   if ( simParams->rigidBonds != RIGID_NONE ) {
 #if 1
@@ -2290,7 +2291,10 @@ D_MSG("submitReductions()");
   // Might be better to replace with counters and test equality.
   //
 
-#if defined(NAMD_USE_NVTX)
+    for(int i = 0; i < NamdProfileEvent::EventsCount; i++)
+	CkPrintf("-------------- [%d] %s -------------\n", i, NamdProfileEventStr[i]);
+
+#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
   int& eon = patch->flags.event_on;
   int epid = (simParams->beginEventPatchID <= patch->getPatchID()
       && patch->getPatchID() <= simParams->endEventPatchID);
@@ -2300,10 +2304,10 @@ D_MSG("submitReductions()");
 
     for ( ++step; step <= numberOfSteps; ++step )
     {
-#if defined(NAMD_USE_NVTX)
+#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
       eon = epid && (beginStep < step && step <= endStep);
 #endif
-      PUSH_RANGE(eon, "integrate 1", 0);
+      NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_1);
 #ifndef UPPER_BOUND
 
       rescaleVelocities(step);
@@ -2330,7 +2334,7 @@ D_MSG("submitReductions()");
 
       maximumMove(timestep);
 
-      POP_RANGE(eon);  // integrate 1
+      NAMD_EVENT_STOP(eon, NamdProfileEvent::INTEGRATE_1);  // integrate 1
 
       if ( simParams->langevinPistonOn || (simParams->langevinOn && simParams->langevin_useBAOAB) ) {
         if ( ! commOnly ) addVelocityToPosition(0.5*timestep);
@@ -2348,7 +2352,7 @@ D_MSG("submitReductions()");
         if ( ! commOnly ) addVelocityToPosition(timestep); 
       }
 
-      PUSH_RANGE(eon, "integrate 2", 1);
+      NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_2);
 
       // impose hard wall potential for Drude bond length
       hardWallDrude(timestep, 1);
@@ -2396,12 +2400,12 @@ D_MSG("submitReductions()");
         doMomenta = 1;
       }
 #endif
-      POP_RANGE(eon);  // integrate 2
+      NAMD_EVENT_STOP(eon, NamdProfileEvent::INTEGRATE_2);  // integrate 2
 
       // The current thread of execution will suspend in runComputeObjects().
       runComputeObjects(!(step%stepsPerCycle),step<numberOfSteps);
 
-      PUSH_RANGE(eon, "integrate 3", 2);
+      NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_3);
 
 #ifndef UPPER_BOUND
       rescaleaccelMD(step, doNonbonded, doFullElectrostatics); // for accelMD
@@ -2455,7 +2459,7 @@ D_MSG("submitReductions()");
       multigratorTemperature(step, 2);
       doMultigratorRattle = (simParams->multigratorOn && !(step % simParams->multigratorTemperatureFreq));
 
-      POP_RANGE(eon);  // integrate 3
+      NAMD_EVENT_STOP(eon, NamdProfileEvent::INTEGRATE_3); // integrate 3
 #endif
 
 #if CYCLE_BARRIER
@@ -3097,7 +3101,7 @@ void Sequencer::newtonianVelocities(BigReal stepscale, const BigReal timestep,
                                     const int doNonbonded,
                                     const int doFullElectrostatics)
 {
-  RANGE(patch->flags.event_on, "newtonianVelocities", 3);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::NEWTONIAN_VELOCITIES);
 
   // Deterministic velocity update, account for multigrator
   if (staleForces || (doNonbonded && doFullElectrostatics)) {
@@ -3152,7 +3156,7 @@ void Sequencer::langevinVelocities(BigReal dt_fs)
 
 void Sequencer::langevinVelocitiesBBK1(BigReal dt_fs)
 {
-  RANGE(patch->flags.event_on, "langevinVelocitiesBBK1", 7);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::LANGEVIN_VELOCITIES_BBK1);
   if ( simParams->langevinOn && !simParams->langevin_useBAOAB )
   {
     FullAtom *a = patch->atom.begin();
@@ -3224,7 +3228,7 @@ void Sequencer::langevinVelocitiesBBK1(BigReal dt_fs)
 
 void Sequencer::langevinVelocitiesBBK2(BigReal dt_fs)
 {
-  RANGE(patch->flags.event_on, "langevinVelocitiesBBK2", 8);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::LANGEVIN_VELOCITIES_BBK2);
   if ( simParams->langevinOn && !simParams->langevin_useBAOAB ) 
   {
     //
@@ -3689,7 +3693,7 @@ void Sequencer::addForceToMomentum3(
 
 void Sequencer::addVelocityToPosition(BigReal timestep)
 {
-  RANGE(patch->flags.event_on, "addVelocityToPosition", 5);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::ADD_VELOCITY_TO_POSITION);
 #if CMK_BLUEGENEL
   CmiNetworkProgressAfter (0);
 #endif
@@ -3715,7 +3719,7 @@ void Sequencer::hardWallDrude(BigReal dt, int pressure)
 
 void Sequencer::rattle1(BigReal dt, int pressure)
 {
-  RANGE(patch->flags.event_on, "rattle1", 9);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::RATTLE1);
   if ( simParams->rigidBonds != RIGID_NONE ) {
     Tensor virial;
     Tensor *vp = ( pressure ? &virial : 0 );
@@ -3772,7 +3776,7 @@ void Sequencer::rattle1(BigReal dt, int pressure)
 
 void Sequencer::maximumMove(BigReal timestep)
 {
-  RANGE(patch->flags.event_on, "maximumMove", 4);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::MAXIMUM_MOVE);
 
   FullAtom *a = patch->atom.begin();
   int numAtoms = patch->numAtoms;
@@ -3828,7 +3832,7 @@ void Sequencer::minimizationQuenchVelocity(void)
 
 void Sequencer::submitHalfstep(int step)
 {
-  RANGE(patch->flags.event_on, "submitHalfstep", 6);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::SUBMIT_HALFSTEP);
 
   // velocity-dependent quantities *** ONLY ***
   // positions are not at half-step when called
@@ -4008,7 +4012,7 @@ void Sequencer::calcFixVirial(Tensor& fixVirialNormal, Tensor& fixVirialNbond, T
 void Sequencer::submitReductions(int step)
 {
 #ifndef UPPER_BOUND
-  RANGE(patch->flags.event_on, "submitReductions", 10);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::SUBMIT_REDUCTIONS);
   FullAtom *a = patch->atom.begin();
 #endif
   int numAtoms = patch->numAtoms;
@@ -4394,7 +4398,7 @@ void Sequencer::submitCollections(int step, int zeroVel)
   //
   //patch->copy_updates_to_AOS();
 
-  RANGE(patch->flags.event_on, "submitCollections", 11);
+  NAMD_EVENT_RANGE(patch->flags.event_on, NamdProfileEvent::SUBMIT_COLLECTIONS);
   int prec = Output::coordinateNeeded(step);
   if ( prec ) {
     collection->submitPositions(step,patch->atom,patch->lattice,prec);

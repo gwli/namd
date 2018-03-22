@@ -11,6 +11,10 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#ifndef SEQUENCER_SOA
+#define SEQUENCER_SOA
+#endif
+
 // Check all bonds that have atom IDs in the range given below.
 #if defined(DEBUG_PROTOCELL)
 // Use Noah's default index range unless others are explicitly provided.
