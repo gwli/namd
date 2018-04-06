@@ -3646,16 +3646,32 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
       done = true;
       consFailure = false;
     } else {
-      rattleN(icnt, &rattleParam[posParam],
+#ifdef NAMD_MSHAKE
+      if (simParams->mshakeOn) {
+        //buildConstantMatrix();
+        iterate(icnt, &rattleParam[posParam],
 #if 0
-        refx, refy, refz,
-        posx, posy, posz,
+            refx, refy, refz,
+            posx, posy, posz, 
 #else
-        &pos_x[ig], &pos_y[ig], &pos_z[ig],
-        &posNew_x[ig], &posNew_y[ig], &posNew_z[ig],
+            &pos_x[ig], &pos_y[ig], &pos_z[ig],
+            &posNew_x[ig], &posNew_y[ig], &posNew_z[ig],
 #endif
-        tol2, maxiter,
-        done, consFailure);
+            tol2, maxiter,
+            done, consFailure);
+      }
+      else
+#endif
+        rattleN(icnt, &rattleParam[posParam],
+#if 0
+            refx, refy, refz,
+            posx, posy, posz,
+#else
+            &pos_x[ig], &pos_y[ig], &pos_z[ig],
+            &posNew_x[ig], &posNew_y[ig], &posNew_z[ig],
+#endif
+            tol2, maxiter,
+            done, consFailure);
     }
 
     // Advance position in rattleParam
