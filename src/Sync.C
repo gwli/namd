@@ -213,6 +213,7 @@ void Sync::triggerCompute()
     homeReady = 0;
     if ( numHomePatches ) {
       counter -= numHomePatches;
+      // XXX How often is this condition true?
       if (counter >= numHomePatches) triggerCompute();
     }
   }

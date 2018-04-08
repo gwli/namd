@@ -1140,7 +1140,15 @@ void HomePatch::positionsReady(int doMigration)
   doMigration = doMigration || doAtomUpdate;
   doAtomUpdate = false;
 
-  // Workaround for oversize groups
+  // Workaround for oversize groups:
+  // reset nonbondedGroupSize (ngs) before force calculation,
+  // making sure that subset of hydrogen group starting with 
+  // parent atom are all within 0.5 * hgroupCutoff.
+  // XXX hydrogentGroupSize remains constant but is checked for nonzero
+  // XXX should be skipped for CUDA, ngs not used by CUDA kernels
+  // XXX should this also be skipped for KNL kernels?
+  // ngs used by ComputeNonbondedBase.h - CPU nonbonded kernels
+  // ngs used by ComputeGBIS.C - CPU GB nonbonded kernels
   doGroupSizeCheck();
 
   // Copy information needed by computes and proxys to Patch::p.
@@ -4481,7 +4489,7 @@ void HomePatch::doGroupSizeCheck()
     const int hgs = p_i->hydrogenGroupSize;
     if ( ! hgs ) break;  // avoid infinite loop on bug
     int ngs = hgs;
-    if ( ngs > 5 ) ngs = 5;  // limit to at most 5 atoms per group
+    if ( ngs > 5 ) ngs = 5;  // XXX why? limit to at most 5 atoms per group
     BigReal x = p_i->position.x;
     BigReal y = p_i->position.y;
     BigReal z = p_i->position.z;

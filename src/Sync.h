@@ -11,6 +11,8 @@
    Many utility static methods are owned by Node.
 */
 
+// Sync prevents launching computes until Proxies are populated.
+
 #ifndef _SYNC_H
 #define _SYNC_H
 

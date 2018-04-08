@@ -55,6 +55,12 @@ struct CompAtom {
   short vdwType;
   unsigned char partition;
   unsigned int nonbondedGroupSize : 3;
+  /**< ngs is number of atoms, starting with parent,
+   * that are all within 0.5*hgroupCutoff.
+   * Value is reset before each force calculation.
+   * XXX Looks like ngs is unused for CUDA and KNL kernels.
+   * XXX Limited to 5.  Why?
+   */
   unsigned int hydrogenGroupSize : 4;  // could be 3 if unsigned
   unsigned int isWater : 1;  // 0 = particle is not in water, 1 = is in water
 };

@@ -316,6 +316,7 @@ void ComputeBondedCUDA::patchReady(PatchID pid, int doneMigration, int seq) {
     //   NAMD_bug("ComputeBondedCUDA::patchReady, Patch ID not found");
     patches[patchIndex[pid]].numAtoms = PatchMap::Object()->patch(pid)->getNumAtoms();
   }
+  // XXX first sum locally, then sum globally
   CmiLock(lock);
   Compute::patchReady(pid, doneMigration, seq);
   CmiUnlock(lock);
