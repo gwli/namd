@@ -5,15 +5,22 @@
 **/
 
 #ifndef NAMDEVENTSPROFILING_H
-
 #define NAMDEVENTSPROFILING_H
 
 #include "common.h"
 #include <map>
 
+//
+// Charm++ Projections requires user defined trace events to be registered
+// with event ID tags and string names.
+//
+// Use the NAMD_PROFILE_EVENT macro within NamdEventsProfiling.def
+// to define these event ID tags and string names.  The IDs generate
+// a set of enumerated types and corresponding array of string names.
+//
 struct NamdProfileEvent {
   typedef enum {
-    #define NAMD_PROFILE_EVENT(a, b) a,
+    #define NAMD_PROFILE_EVENT(a,b) a,
     #include "NamdEventsProfiling.def"
     #undef NAMD_PROFILE_EVENT
     EventsCount
@@ -27,14 +34,15 @@ char const* const NamdProfileEventStr[] = {
   0
 };
 
-//
-// When defined, use NVTX to record CPU activity into CUDA profiling run.
-//
 #undef NAMD_EVENT_START
 #undef NAMD_EVENT_STOP
 #undef NAMD_EVENT_RANGE
 
-#if defined(NAMD_CUDA) && defined(NAMD_USE_NVTX)
+//
+// Enable NVTX instrumentation for nvvp or Nsight profiling
+// NAMD_CUDA build by defining NAMD_NVTX_ENABLED in Make.config
+//
+#if defined(NAMD_CUDA) && defined(NAMD_NVTX_ENABLED)
 
 #include <nvToolsExt.h>
 
@@ -51,7 +59,8 @@ const uint32_t NAMD_nvtx_colors[] = {
 };
 const int NAMD_nvtx_colors_len = sizeof(NAMD_nvtx_colors)/sizeof(uint32_t);
 
-#define NAMD_REGISTER_EVENT(name,cid) do { } while(0) // must terminate with semi-colon
+#define NAMD_REGISTER_EVENT(name,cid) \
+  do { } while(0)  // must terminate with semi-colon
 
 // start recording an event
 #define NAMD_EVENT_START(eon,id) \
@@ -95,15 +104,16 @@ class NAMD_NVTX_Tracer {
   NAMD_NVTX_Tracer namd_nvtx_tracer(eon,id)
   // must terminate with semi-colon
 
-#elif CMK_TRACE_ENABLED
 
 //
-// Otherwise use Projections user events for profiling if Projections tracing is enabled
+// Enable Projections trace events when built against CMK_TRACE_ENABLED
+// version of Charm++ by defining NAMD_CMK_TRACE_ENABLED in Make.config
 //
+#elif defined(CMK_TRACE_ENABLED) && defined(NAMD_CMK_TRACE_ENABLED)
+
+// XXX should be more general than tracing Sequencer functions
+// XXX why offset event numbers by 150?
 #define SEQUENCER_EVENT_ID_START 150
-//TODO: Remove after support is added on Charm/Projections internals
-#define traceUserBracketEventStart(eid)  do { } while(0)
-#define traceUserBracketEventStop(eid)   do { } while(0)
 
 #define NAMD_REGISTER_EVENT(name,id) \
   do { \
@@ -127,6 +137,7 @@ class NAMD_NVTX_Tracer {
     } \
   } while(0)  // must terminate with semi-colon
 
+// XXX should be more general than Sequencer
 class NAMD_Sequencer_Events_Tracer {
   int tEventID;
   int tEventOn;
@@ -151,11 +162,18 @@ class NAMD_Sequencer_Events_Tracer {
 //
 // Otherwise all profiling macros become no-ops.
 //
-#define NAMD_REGISTER_EVENT(name,cid)     do { } while(0)  // must terminate with semi-colon
-#define NAMD_EVENT_START(eon,id)          do { } while(0)  // must terminate with semi-colon
-#define NAMD_EVENT_STOP(eon,id)           do { } while(0)  // must terminate with semi-colon
-#define NAMD_EVENT_RANGE(eon,id)          do { } while(0)  // must terminate with semi-colon
+#define NAMD_REGISTER_EVENT(name,cid) \
+  do { } while(0)  // must terminate with semi-colon
 
-#endif // NAMD_CUDA && NAMD_USE_NVTX
+#define NAMD_EVENT_START(eon,id) \
+  do { } while(0)  // must terminate with semi-colon
+
+#define NAMD_EVENT_STOP(eon,id) \
+  do { } while(0)  // must terminate with semi-colon
+
+#define NAMD_EVENT_RANGE(eon,id) \
+  do { } while(0)  // must terminate with semi-colon
+
+#endif // NAMD_CUDA && NAMD_NVTX_ENABLED
 
 #endif /* NAMDEVENTSPROFILING_H */

@@ -645,7 +645,7 @@ void SimParameters::config_parser_basic(ParseOptions &opts) {
    // SOA integration routine for higher performance
    opts.optionalB("main", "SOAintegrate", "Use SOA integration routine",
        &SOAintegrateOn, FALSE);
-#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
+#if defined(NAMD_NVTX_ENABLED) || defined(NAMD_CMK_TRACE_ENABLED)
    // default NVTX or Projections profiling is up to the first 1000 patches
    opts.optional("main", "beginEventPatchID","Beginning patch ID for profiling",
        &beginEventPatchID, 0);

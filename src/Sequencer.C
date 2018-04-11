@@ -551,7 +551,7 @@ D_MSG("submiReductionsp_SOA()");
     rebalanceLoad(step);
   } // scriptTask == SCRIPT_RUN
 
-#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
+#if defined(NAMD_NVTX_ENABLED) || defined(NAMD_CMK_TRACE_ENABLED)
   int& eon = patch->flags.event_on;
   int epid = (simParams->beginEventPatchID <= patch->getPatchID()
       && patch->getPatchID() <= simParams->endEventPatchID);
@@ -560,7 +560,7 @@ D_MSG("submiReductionsp_SOA()");
 #endif
 
   for ( ++step; step <= numberOfSteps; ++step ) {
-#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
+#if defined(NAMD_NVTX_ENABLED) || defined(NAMD_CMK_TRACE_ENABLED)
       eon = epid && (beginStep < step && step <= endStep);
 #endif
     NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_SOA_1);
@@ -2294,7 +2294,7 @@ D_MSG("submitReductions()");
     for(int i = 0; i < NamdProfileEvent::EventsCount; i++)
 	CkPrintf("-------------- [%d] %s -------------\n", i, NamdProfileEventStr[i]);
 
-#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
+#if defined(NAMD_NVTX_ENABLED) || defined(NAMD_CMK_TRACE_ENABLED)
   int& eon = patch->flags.event_on;
   int epid = (simParams->beginEventPatchID <= patch->getPatchID()
       && patch->getPatchID() <= simParams->endEventPatchID);
@@ -2304,7 +2304,7 @@ D_MSG("submitReductions()");
 
     for ( ++step; step <= numberOfSteps; ++step )
     {
-#if defined(NAMD_USE_NVTX) || CMK_TRACE_ENABLED
+#if defined(NAMD_NVTX_ENABLED) || defined(NAMD_CMK_TRACE_ENABLED)
       eon = epid && (beginStep < step && step <= endStep);
 #endif
       NAMD_EVENT_START(eon, NamdProfileEvent::INTEGRATE_1);
