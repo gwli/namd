@@ -44,54 +44,95 @@ class ProxyNodeAwareSpanningTreeMsg;
 
 class ComputeQMMgr;
 
-//
-// DJH: Array buffers defined here for storing data from FullAtomList and
-// also forces into SOA (structure of arrays) layout. Also declare methods
-// for copying from AOS to SOA and back again.
-//
-// We will also remove derived constants from FullAtom (e.g. recipMass).
-// The idea is reduce the messaging footprint as much as possible.
-// Recalculate constants after atom migration.
-//
+/***
+ * Store atom data for a patch in SOA (structure of arrays) form for 
+ * improved vectorization.  For now we keep AOS form for packing
+ * messages, especially for atom migration, and to remain compatible
+ * with the rest of NAMD.  Copy AOS to SOA data structure at the end
+ * of each atom migration.  Copy AOS forces to SOA after force computes.
+ * Copy updated positions from SOA to AOS before launching force computes.
+ * Copy updated coordinates to AOS before atom migration and collections.
+ *
+ * Buffer space is allocated in one large block containing arrays of the
+ * atom components.  These arrays are padded up to the next multiple of
+ * 32 for vectorization.  Maintaining a single buffer space makes it
+ * easier to move data onto GPU.
+ *
+ * XXX Plan to remove derived constants from FullAtom (e.g. recipMass),
+ * to reduce message sizes as much as possible.  Recalculate derived
+ * constants after atom migration.
+ *
+ * XXX Plan to split storage into necessary data and auxiliary buffer
+ * space.  Gaussian random numbers need buffer space for generating
+ * but don't need to be maintained.  The velNew* and posNew* buffers
+ * are temporary space for calculating rigid bond constraints.
+ */
 struct PatchDataSOA {
+  enum {
+    MAXFACTOR = 32  ///< pad length of arrays up to this next multiple
+  };
 
-  ResizeArray<int>   hydrogenGroupSize;
-  ResizeArray<float> mass;
-  ResizeArray<float> recipMass; // derived from mass
-  ResizeArray<float> rigidBondLength;
+  ResizeArray<unsigned char> soa_buffer;
+  /**< SOA storage buffer.
+   * For now use ResizeArray because it produces memory aligned buffer.
+   * XXX We will need to replace with something that can also work on GPU.
+   */
 
-  ResizeArray<float> langevinParam;
-  ResizeArray<float> langScalVelBBK2;  // derived from langevinParam
-  ResizeArray<float> langScalRandBBK2; // from langevinParam and recipMass
+  int *    hydrogenGroupSize;
+  float *  mass;
+  float *  recipMass;  ///< derived from mass
+  float *  rigidBondLength;
 
-  ResizeArray<float> gaussrand_x; // fill with Gaussian random numbers
-  ResizeArray<float> gaussrand_y;
-  ResizeArray<float> gaussrand_z;
+  float *  langevinParam;
+  float *  langScalVelBBK2;  ///< derived from langevinParam
+  float *  langScalRandBBK2; ///< from langevinParam and recipMass
 
-  ResizeArray<double> vel_x;  // Jim recommends double precision velocity
-  ResizeArray<double> vel_y;
-  ResizeArray<double> vel_z;
-  ResizeArray<double> pos_x;
-  ResizeArray<double> pos_y;
-  ResizeArray<double> pos_z;
-  ResizeArray<double> f_normal_x;
-  ResizeArray<double> f_normal_y;
-  ResizeArray<double> f_normal_z;
-  ResizeArray<double> f_nbond_x;
-  ResizeArray<double> f_nbond_y;
-  ResizeArray<double> f_nbond_z;
-  ResizeArray<double> f_slow_x;
-  ResizeArray<double> f_slow_y;
-  ResizeArray<double> f_slow_z;
-  ResizeArray<double> velNew_x;  // for rigid bond constraints
-  ResizeArray<double> velNew_y;
-  ResizeArray<double> velNew_z;
-  ResizeArray<double> posNew_x;
-  ResizeArray<double> posNew_y;
-  ResizeArray<double> posNew_z;
+  float *  gaussrand_x;  ///< fill with Gaussian distributed random numbers
+  float *  gaussrand_y;
+  float *  gaussrand_z;
 
-  int numAtoms;
-  PatchDataSOA() : numAtoms(0) { }
+  double * vel_x;  ///< Jim recommends double precision velocity
+  double * vel_y;
+  double * vel_z;
+  double * pos_x;
+  double * pos_y;
+  double * pos_z;
+  double * f_normal_x;
+  double * f_normal_y;
+  double * f_normal_z;
+  double * f_nbond_x;
+  double * f_nbond_y;
+  double * f_nbond_z;
+  double * f_slow_x;
+  double * f_slow_y;
+  double * f_slow_z;
+  double * velNew_x;  ///< temp storage for rigid bond constraints
+  double * velNew_y;
+  double * velNew_z;
+  double * posNew_x;
+  double * posNew_y;
+  double * posNew_z;
+
+  int numAtoms;  ///< number of atoms
+  int maxAtoms;  ///< max number of atoms available, multiple of MAXFACTOR
+  size_t numBytes;  ///< number of bytes allocated for soa_buffer
+
+  /***
+   * Initialize pointers to NULL and counts to zero.
+   */
+  PatchDataSOA() { memset(this, 0, sizeof(PatchDataSOA)); }
+
+  /***
+   * Resize buffer storage to hold n atoms.
+   * Space allocation only grows, it never shrinks.
+   * Existing data is preserved, like realloc.
+   */
+  void resize(int n);
+
+  /***
+   * Access buffer contents through pointer.
+   */
+  unsigned char *buffer() { return soa_buffer.begin(); }
 
 }; // PatchDataSOA
 

@@ -1442,45 +1442,172 @@ void HomePatch::sort_solvent_atoms() {
 }
 
 
-void HomePatch::copy_atoms_to_SOA() {
-  const SimParameters *simParams = Node::Object()->simParameters;
-  if (patchDataSOA.numAtoms != numAtoms) {
-    // resize the arrays to proper length
-    patchDataSOA.hydrogenGroupSize.resize(numAtoms);
-    patchDataSOA.mass.resize(numAtoms);
-    patchDataSOA.recipMass.resize(numAtoms);
-    patchDataSOA.rigidBondLength.resize(numAtoms);
-    patchDataSOA.langevinParam.resize(numAtoms);
-    patchDataSOA.langScalVelBBK2.resize(numAtoms);
-    patchDataSOA.langScalRandBBK2.resize(numAtoms);
-    patchDataSOA.gaussrand_x.resize(numAtoms);
-    patchDataSOA.gaussrand_y.resize(numAtoms);
-    patchDataSOA.gaussrand_z.resize(numAtoms);
-    patchDataSOA.vel_x.resize(numAtoms);
-    patchDataSOA.vel_y.resize(numAtoms);
-    patchDataSOA.vel_z.resize(numAtoms);
-    patchDataSOA.pos_x.resize(numAtoms);
-    patchDataSOA.pos_y.resize(numAtoms);
-    patchDataSOA.pos_z.resize(numAtoms);
-    patchDataSOA.f_normal_x.resize(numAtoms);
-    patchDataSOA.f_normal_y.resize(numAtoms);
-    patchDataSOA.f_normal_z.resize(numAtoms);
-    patchDataSOA.f_nbond_x.resize(numAtoms);
-    patchDataSOA.f_nbond_y.resize(numAtoms);
-    patchDataSOA.f_nbond_z.resize(numAtoms);
-    patchDataSOA.f_slow_x.resize(numAtoms);
-    patchDataSOA.f_slow_y.resize(numAtoms);
-    patchDataSOA.f_slow_z.resize(numAtoms);
-    if (simParams->rigidBonds != RIGID_NONE) {
-      patchDataSOA.velNew_x.resize(numAtoms);
-      patchDataSOA.velNew_y.resize(numAtoms);
-      patchDataSOA.velNew_z.resize(numAtoms);
-      patchDataSOA.posNew_x.resize(numAtoms);
-      patchDataSOA.posNew_y.resize(numAtoms);
-      patchDataSOA.posNew_z.resize(numAtoms);
-    }
-    patchDataSOA.numAtoms = numAtoms;
+// Resize buffer storage to hold n atoms.
+// Space allocation only grows, it never shrinks.
+// Existing data is preserved, like realloc.
+void PatchDataSOA::resize(int n) {
+  if (n <= maxAtoms) {
+    numAtoms = n;
+    return;
   }
+  // extend maxAtoms to be smallest integer greater than or equal to n
+  // that is divisible by MAXFACTOR
+  maxAtoms = ((n + MAXFACTOR - 1) / MAXFACTOR) * MAXFACTOR;
+
+  // ResizeArray produces correct byte alignment for vector access.
+  // MAXFACTOR is chosen to ensure correct byte alignment for all
+  // data arrays within buffer
+
+  // create the new buffer space
+  size_t nbytes =
+    maxAtoms * (sizeof(int) + 9*sizeof(float) + 21*sizeof(double));
+  ResizeArray<unsigned char> t;
+  t.resize(nbytes);
+
+  // point to the front of the new buffer space
+  unsigned char *p = t.begin();
+
+  // copy the old buffer space to the new
+  // then update the pointer to point into the new buffer space
+  // numAtoms > 0 implies that oldptr != NULL
+  // otherwise it is not safe to use memcpy
+
+  if (numAtoms > 0) memcpy(p, hydrogenGroupSize, numAtoms*sizeof(int));
+  hydrogenGroupSize = (int *) p;
+  p += maxAtoms*sizeof(int);
+
+  if (numAtoms > 0) memcpy(p, mass, numAtoms*sizeof(float));
+  mass = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  if (numAtoms > 0) memcpy(p, recipMass, numAtoms*sizeof(float));
+  recipMass = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  if (numAtoms > 0) memcpy(p, rigidBondLength, numAtoms*sizeof(float));
+  rigidBondLength = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  if (numAtoms > 0) memcpy(p, langevinParam, numAtoms*sizeof(float));
+  langevinParam = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  if (numAtoms > 0) memcpy(p, langScalVelBBK2, numAtoms*sizeof(float));
+  langScalVelBBK2 = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  if (numAtoms > 0) memcpy(p, langScalRandBBK2, numAtoms*sizeof(float));
+  langScalRandBBK2 = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  //if (numAtoms > 0) memcpy(p, gaussrand_x, numAtoms*sizeof(float));
+  gaussrand_x = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  //if (numAtoms > 0) memcpy(p, gaussrand_y, numAtoms*sizeof(float));
+  gaussrand_y = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  //if (numAtoms > 0) memcpy(p, gaussrand_z, numAtoms*sizeof(float));
+  gaussrand_z = (float *) p;
+  p += maxAtoms*sizeof(float);
+
+  if (numAtoms > 0) memcpy(p, vel_x, numAtoms*sizeof(double));
+  vel_x = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, vel_y, numAtoms*sizeof(double));
+  vel_y = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, vel_z, numAtoms*sizeof(double));
+  vel_z = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, pos_x, numAtoms*sizeof(double));
+  pos_x = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, pos_y, numAtoms*sizeof(double));
+  pos_y = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, pos_z, numAtoms*sizeof(double));
+  pos_z = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_normal_x, numAtoms*sizeof(double));
+  f_normal_x = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_normal_y, numAtoms*sizeof(double));
+  f_normal_y = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_normal_z, numAtoms*sizeof(double));
+  f_normal_z = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_nbond_x, numAtoms*sizeof(double));
+  f_nbond_x = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_nbond_y, numAtoms*sizeof(double));
+  f_nbond_y = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_nbond_z, numAtoms*sizeof(double));
+  f_nbond_z = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_slow_x, numAtoms*sizeof(double));
+  f_slow_x = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_slow_y, numAtoms*sizeof(double));
+  f_slow_y = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  if (numAtoms > 0) memcpy(p, f_slow_z, numAtoms*sizeof(double));
+  f_slow_z = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  //if (numAtoms > 0) memcpy(p, velNew_x, numAtoms*sizeof(double));
+  velNew_x = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  //if (numAtoms > 0) memcpy(p, velNew_y, numAtoms*sizeof(double));
+  velNew_y = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  //if (numAtoms > 0) memcpy(p, velNew_z, numAtoms*sizeof(double));
+  velNew_z = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  //if (numAtoms > 0) memcpy(p, posNew_x, numAtoms*sizeof(double));
+  posNew_x = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  //if (numAtoms > 0) memcpy(p, posNew_y, numAtoms*sizeof(double));
+  posNew_y = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  //if (numAtoms > 0) memcpy(p, posNew_z, numAtoms*sizeof(double));
+  posNew_z = (double *) p;
+  p += maxAtoms*sizeof(double);
+
+  numAtoms = n;  // update to new number of atoms
+  numBytes = nbytes;  // save buffer size
+
+  // swap new buffer in place of old buffer
+  // old buffer space is freed by t's destructor
+  soa_buffer.swap(t);
+}
+
+
+void HomePatch::copy_atoms_to_SOA() {
+  // make sure that SOA data storage is big enough
+  patchDataSOA.resize(numAtoms);
 
   // copy data from AOS into SOA
   for (int i=0;  i < numAtoms;  i++) {
@@ -1495,7 +1622,8 @@ void HomePatch::copy_atoms_to_SOA() {
     patchDataSOA.pos_y[i] = atom[i].position.y;
     patchDataSOA.pos_z[i] = atom[i].position.z;
   }
-  
+
+  // calculate quantities derived basic components
   calculate_derived_SOA();
 }
 
@@ -3201,6 +3329,7 @@ void HomePatch::buildRattleList_SOA() {
   // List will stay valid until atom migration or some other event, 
   // such as exchanging replicas, SCRIPT_REVERT from Tcl, reinit atoms.
 
+#if 0
   const double * __restrict pos_x = patchDataSOA.pos_x.const_begin();
   const double * __restrict pos_y = patchDataSOA.pos_y.const_begin();
   const double * __restrict pos_z = patchDataSOA.pos_z.const_begin();
@@ -3210,6 +3339,14 @@ void HomePatch::buildRattleList_SOA() {
     patchDataSOA.rigidBondLength.const_begin();
   const int    * __restrict hydrogenGroupSize =
     patchDataSOA.hydrogenGroupSize.const_begin();
+#endif
+  const double * __restrict pos_x = patchDataSOA.pos_x;
+  const double * __restrict pos_y = patchDataSOA.pos_y;
+  const double * __restrict pos_z = patchDataSOA.pos_z;
+  const float  * __restrict mass = patchDataSOA.mass;
+  const float  * __restrict recipMass = patchDataSOA.recipMass;
+  const float  * __restrict rigidBondLength = patchDataSOA.rigidBondLength;
+  const int    * __restrict hydrogenGroupSize = patchDataSOA.hydrogenGroupSize;
 
   SimParameters *simParams = Node::Object()->simParameters;
   const int fixedAtomsOn = simParams->fixedAtomsOn;
@@ -3388,6 +3525,7 @@ void HomePatch::buildRattleList_SOA() {
 }
 
 void HomePatch::addRattleForce_SOA(const BigReal invdt, Tensor& wc) {
+#if 0
   const float  * __restrict mass = patchDataSOA.mass.const_begin();
   const double * __restrict pos_x = patchDataSOA.pos_x.const_begin();
   const double * __restrict pos_y = patchDataSOA.pos_y.const_begin();
@@ -3401,6 +3539,20 @@ void HomePatch::addRattleForce_SOA(const BigReal invdt, Tensor& wc) {
   double * __restrict f_normal_x = patchDataSOA.f_normal_x.begin();
   double * __restrict f_normal_y = patchDataSOA.f_normal_y.begin();
   double * __restrict f_normal_z = patchDataSOA.f_normal_z.begin();
+#endif
+  const float  * __restrict mass = patchDataSOA.mass;
+  const double * __restrict pos_x = patchDataSOA.pos_x;
+  const double * __restrict pos_y = patchDataSOA.pos_y;
+  const double * __restrict pos_z = patchDataSOA.pos_z;
+  const double * __restrict velNew_x = patchDataSOA.velNew_x;
+  const double * __restrict velNew_y = patchDataSOA.velNew_y;
+  const double * __restrict velNew_z = patchDataSOA.velNew_z;
+  double * __restrict vel_x = patchDataSOA.vel_x;
+  double * __restrict vel_y = patchDataSOA.vel_y;
+  double * __restrict vel_z = patchDataSOA.vel_z;
+  double * __restrict f_normal_x = patchDataSOA.f_normal_x;
+  double * __restrict f_normal_y = patchDataSOA.f_normal_y;
+  double * __restrict f_normal_z = patchDataSOA.f_normal_z;
 
   Tensor vir;  // = 0
   for (int ig = 0; ig < numAtoms; ++ig ) {
@@ -3454,6 +3606,7 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
   }
 #endif
 
+#if 0
   double * __restrict pos_x = patchDataSOA.pos_x.begin();
   double * __restrict pos_y = patchDataSOA.pos_y.begin();
   double * __restrict pos_z = patchDataSOA.pos_z.begin();
@@ -3468,6 +3621,20 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
   double * __restrict velNew_z = patchDataSOA.velNew_z.begin();
   const int * __restrict hydrogenGroupSize =
     patchDataSOA.hydrogenGroupSize.const_begin();
+#endif
+  double * __restrict pos_x = patchDataSOA.pos_x;
+  double * __restrict pos_y = patchDataSOA.pos_y;
+  double * __restrict pos_z = patchDataSOA.pos_z;
+  double * __restrict vel_x = patchDataSOA.vel_x;
+  double * __restrict vel_y = patchDataSOA.vel_y;
+  double * __restrict vel_z = patchDataSOA.vel_z;
+  double * __restrict posNew_x = patchDataSOA.posNew_x;
+  double * __restrict posNew_y = patchDataSOA.posNew_y;
+  double * __restrict posNew_z = patchDataSOA.posNew_z;
+  double * __restrict velNew_x = patchDataSOA.velNew_x;
+  double * __restrict velNew_y = patchDataSOA.velNew_y;
+  double * __restrict velNew_z = patchDataSOA.velNew_z;
+  const int * __restrict hydrogenGroupSize = patchDataSOA.hydrogenGroupSize;
 #ifdef __INTEL_COMPILER
   __assume_aligned(pos_x,64);
   __assume_aligned(pos_y,64);
@@ -3793,10 +3960,16 @@ int HomePatch::rattle1_SOA(const BigReal dt, Tensor *virial,
     addRattleForce_SOA(invdt, *virial);
     //*virial += wc;
 #else
+#if 0
     const float  * __restrict mass = patchDataSOA.mass.const_begin();
     double * __restrict f_normal_x = patchDataSOA.f_normal_x.begin();
     double * __restrict f_normal_y = patchDataSOA.f_normal_y.begin();
     double * __restrict f_normal_z = patchDataSOA.f_normal_z.begin();
+#endif
+    const float  * __restrict mass = patchDataSOA.mass;
+    double * __restrict f_normal_x = patchDataSOA.f_normal_x;
+    double * __restrict f_normal_y = patchDataSOA.f_normal_y;
+    double * __restrict f_normal_z = patchDataSOA.f_normal_z;
 #ifdef __INTEL_COMPILER
     __assume_aligned(mass,64);
     __assume_aligned(f_normal_x,64);
