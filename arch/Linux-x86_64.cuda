@@ -1,5 +1,5 @@
 
-CUDADIR=/usr/local/encap/cuda-8.0
+CUDADIR=/usr/local/cuda-8.0
 CUDAINCL=-I$(CUDADIR)/include
 CUBDIR=.rootdir/cub
 CUBINCL=-I$(CUBDIR)
